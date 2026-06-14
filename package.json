@@ -1,0 +1,25 @@
+{
+  "name": "mykeyz-mcp",
+  "version": "0.1.0",
+  "description": "Serveur MCP exposant l'API MyKeyz (CRM immobilier).",
+  "type": "module",
+  "bin": {
+    "mykeyz-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "dotenv": "^16.4.5",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  }
+}
