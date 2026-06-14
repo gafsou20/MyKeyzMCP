@@ -1,5 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerContactTools } from './tools/contacts.js';
+import { registerProprieteTools } from './tools/proprietes.js';
+import { registerAgendaTools } from './tools/agenda.js';
+import { registerProjetTools } from './tools/projets.js';
+import { registerTransactionTools } from './tools/transactions.js';
 
 /**
  * Construit un serveur MCP configuré avec tous les outils MyKeyz.
@@ -8,5 +12,9 @@ import { registerContactTools } from './tools/contacts.js';
 export function createServer(): McpServer {
   const server = new McpServer({ name: 'mykeyz-mcp', version: '0.1.0' });
   registerContactTools(server);
+  registerProprieteTools(server);
+  registerAgendaTools(server);
+  registerProjetTools(server);
+  registerTransactionTools(server);
   return server;
 }

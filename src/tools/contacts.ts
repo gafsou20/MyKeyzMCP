@@ -47,4 +47,32 @@ export function registerContactTools(server: McpServer): void {
       return { content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }] };
     },
   );
+
+  server.tool(
+    'get_contact',
+    "Fiche détaillée d'un contact MyKeyz : coordonnées, recherches, biens, projets, RDV et commentaires liés (libellés résolus).",
+    {
+      id: z.number().int().describe('Identifiant du contact.'),
+    },
+    async ({ id }) => {
+      await ref.ensureLoaded();
+      const d = await contactsApi.get(id);
+      const payload = {
+        ...présenter(d.contact),
+        categorie: ref.label('ContactCategorie', d.contact.categorie_id) || null,
+        langue: ref.label('Langue', d.contact.langue_id) || null,
+        commentaire: d.contact.commentaire,
+        recherches: d.searchs?.length ?? 0,
+        biens_lies: d.proprietes?.length ?? 0,
+        projets_lies: d.projets?.length ?? 0,
+        rdv: (d.agenda ?? []).map((e) => ({ titre: e.data?.titre, date: e.data?.date, heure: e.data?.heure })),
+        commentaires: (d.commentaires ?? []).map((c) => ({
+          texte: c.txt,
+          auteur: ref.label('User', c.user_id) || c.user_id,
+          date: c.date_create,
+        })),
+      };
+      return { content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }] };
+    },
+  );
 }
