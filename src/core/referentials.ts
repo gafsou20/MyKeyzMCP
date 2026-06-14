@@ -1,8 +1,14 @@
 import * as paramsApi from '../api/params.js';
 import type { MenuItem, ParamItem } from '../types/models.js';
 import { DEFAULT_LOCALE } from './config.js';
+import { currentToken } from './context.js';
 
 type Locale = 'fr' | 'he' | 'en';
+
+interface RefStore {
+  menu: MenuItem[];
+  params: Record<string, ParamItem[]>;
+}
 
 /** Humanise une clé snake_case (« nouveau_lead » → « Nouveau lead »). */
 function humanize(s: string): string {
@@ -12,24 +18,31 @@ function humanize(s: string): string {
 }
 
 /**
- * Cache du dictionnaire de jointures `/param/all`.
- * L'API ne fait pas les jointures id→libellé : c'est résolu ici, comme dans le CRM.
+ * Cache du dictionnaire de jointures `/param/all`, **par token** : en HTTP
+ * multi-utilisateur, chaque utilisateur/env peut avoir des référentiels et un
+ * menu (ACL) différents. En stdio, il n'y a qu'une seule entrée.
  */
-let menu: MenuItem[] = [];
-let params: Record<string, ParamItem[]> = {};
-let loadedAt: number | null = null;
+const cache = new Map<string, RefStore>();
 
-export async function load(force = false): Promise<void> {
-  if (loadedAt && !force) return;
+function cacheKey(): string {
+  return currentToken() ?? '__anon__';
+}
+
+/** Charge les référentiels du token courant s'ils ne sont pas déjà en cache. */
+export async function ensureLoaded(force = false): Promise<void> {
+  const key = cacheKey();
+  if (cache.has(key) && !force) return;
   const res = await paramsApi.all();
-  menu = res.menu ?? [];
-  params = res.params ?? {};
-  loadedAt = Date.now();
+  cache.set(key, { menu: res.menu ?? [], params: res.params ?? {} });
+}
+
+function store(): RefStore | undefined {
+  return cache.get(cacheKey());
 }
 
 /** Liste d'un référentiel. */
 export function list(model: string): ParamItem[] {
-  return params[model] ?? [];
+  return store()?.params[model] ?? [];
 }
 
 /** Résout un id → objet du référentiel. */
@@ -48,5 +61,5 @@ export function label(model: string, id: number | null | undefined, lang: Locale
 }
 
 export function menuItems(): MenuItem[] {
-  return menu;
+  return store()?.menu ?? [];
 }

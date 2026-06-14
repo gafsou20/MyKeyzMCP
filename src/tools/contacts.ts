@@ -32,6 +32,7 @@ export function registerContactTools(server: McpServer): void {
       page: z.number().int().min(1).default(1).describe('Page (pagination).'),
     },
     async ({ search, important, limit, page }) => {
+      await ref.ensureLoaded();
       const filters: Record<string, unknown> = {};
       if (search) filters.titre = search;
       if (important !== undefined) filters.important = important;
