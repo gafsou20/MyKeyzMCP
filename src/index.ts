@@ -1,17 +1,20 @@
 #!/usr/bin/env node
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { MYKEYZ_TOKEN } from './core/config.js';
+import { STDIO_TOKEN } from './core/config.js';
+import { setDefaultToken } from './core/context.js';
 import { createServer } from './server.js';
 
 /**
- * Entrée stdio (Claude Desktop, mono-utilisateur).
- * Le token vient du `.env` (MYKEYZ_TOKEN) via le repli de `core/context`.
+ * Entrée **stdio** (Claude Desktop, mono-poste). Le token est fourni par la
+ * config du client qui lance ce process (variable d'env MYKEYZ_TOKEN). Ce n'est
+ * PAS le mode multi-utilisateur — pour ça, voir l'entrée HTTP (`http.ts`).
  */
 async function main() {
-  if (!MYKEYZ_TOKEN) {
-    console.error('[mykeyz-mcp] MYKEYZ_TOKEN manquant — renseigner le .env (mode stdio).');
+  if (!STDIO_TOKEN) {
+    console.error('[mykeyz-mcp] stdio : MYKEYZ_TOKEN absent (à passer par la config du client).');
     process.exit(1);
   }
+  setDefaultToken(STDIO_TOKEN);
 
   const server = createServer();
   const transport = new StdioServerTransport();

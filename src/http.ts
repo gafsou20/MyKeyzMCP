@@ -3,14 +3,16 @@ import express from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createServer } from './server.js';
 import { runWithToken } from './core/context.js';
-import { MYKEYZ_TOKEN } from './core/config.js';
 
 const PORT = Number(process.env.PORT ?? 8787);
 
-/** Extrait le token MyKeyz du header Authorization (tolère le préfixe Bearer). */
+/**
+ * Extrait le token MyKeyz du header Authorization (tolère le préfixe Bearer).
+ * Aucun repli serveur : sans header, la requête est refusée (multi-locataire).
+ */
 function tokenFromRequest(req: express.Request): string | null {
   const raw = req.headers['authorization'];
-  if (!raw) return MYKEYZ_TOKEN || null; // repli mono-locataire si configuré
+  if (!raw) return null;
   const value = Array.isArray(raw) ? raw[0] : raw;
   return value.replace(/^Bearer\s+/i, '').trim() || null;
 }
