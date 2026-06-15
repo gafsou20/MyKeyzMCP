@@ -4,7 +4,41 @@ import * as proprietesApi from '../api/proprietes.js';
 import { defaultListQuery } from '../types/api.js';
 import * as ref from '../core/referentials.js';
 import { i18nText, addressLine } from '../core/format.js';
+import { i18nSchema, adresseSchema } from './schemas.js';
 import type { Propriete } from '../types/models.js';
+
+/** Champs modifiables d'un bien (tous optionnels). */
+const proprieteFields = {
+  ref: z.string().nullable().optional(),
+  contact_id: z.number().int().nullable().optional().describe('Propriétaire (contact).'),
+  projet_id: z.number().int().nullable().optional(),
+  transaction_id: z.number().int().nullable().optional().describe('Référentiel ProprieteTransaction.'),
+  bien_id: z.number().int().nullable().optional().describe('Type de bien (référentiel ProprieteBien).'),
+  bien_option_id: z.number().int().nullable().optional(),
+  etat_id: z.number().int().nullable().optional(),
+  source_id: z.number().int().nullable().optional(),
+  status_id: z.number().int().optional().describe('Référentiel ProprieteStatus.'),
+  titre: i18nSchema.optional(),
+  description: i18nSchema.optional(),
+  adresse: adresseSchema.optional(),
+  superficie: z.number().nullable().optional(),
+  superficie_terrain: z.number().nullable().optional(),
+  etage: z.number().nullable().optional(),
+  nb_pieces: z.number().nullable().optional(),
+  orientation: z.string().nullable().optional(),
+  num_apt: z.string().nullable().optional(),
+  prix_vente: z.number().nullable().optional(),
+  terrace: z.boolean().optional(),
+  jardin: z.boolean().optional(),
+  ascenseur: z.boolean().optional(),
+  parking: z.boolean().optional(),
+  cave: z.boolean().optional(),
+  vue_mer: z.boolean().optional(),
+  meuble: z.boolean().optional(),
+  luxe: z.boolean().optional(),
+  exclus: z.boolean().optional(),
+  exclus_expire: z.string().nullable().optional(),
+};
 
 function présenter(p: Propriete) {
   return {
@@ -74,6 +108,36 @@ export function registerProprieteTools(server: McpServer): void {
         rdv: (d.agenda ?? []).map((e) => ({ titre: e.data?.titre, date: e.data?.date, heure: e.data?.heure })),
       };
       return { content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }] };
+    },
+  );
+
+  // ── Écritures ──────────────────────────────────────────────────────────────
+
+  server.tool(
+    'create_propriete',
+    "Crée un bien, ou le met à jour si `id` est fourni. Soumis à l'ACL (ajout 17 / modification 18). Champs i18n (titre/description) au format {fr,he,en}.",
+    {
+      id: z.number().int().optional().describe('Présent = mise à jour ; absent = création.'),
+      ...proprieteFields,
+    },
+    async (args) => {
+      await ref.ensureLoaded();
+      const saved = await proprietesApi.create(args as Partial<Propriete> & { id?: number });
+      return { content: [{ type: 'text', text: JSON.stringify(présenter(saved), null, 2) }] };
+    },
+  );
+
+  server.tool(
+    'set_propriete_status',
+    "Change le statut d'un bien (ACL 19).",
+    {
+      id: z.number().int().describe('Identifiant du bien.'),
+      status_id: z.number().int().describe('Nouveau statut (référentiel ProprieteStatus).'),
+    },
+    async ({ id, status_id }) => {
+      await ref.ensureLoaded();
+      const saved = await proprietesApi.create({ id, status_id });
+      return { content: [{ type: 'text', text: JSON.stringify(présenter(saved), null, 2) }] };
     },
   );
 }

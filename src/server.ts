@@ -4,6 +4,8 @@ import { registerProprieteTools } from './tools/proprietes.js';
 import { registerAgendaTools } from './tools/agenda.js';
 import { registerProjetTools } from './tools/projets.js';
 import { registerTransactionTools } from './tools/transactions.js';
+import { registerGedTools } from './tools/ged.js';
+import { registerAiTools } from './tools/ai.js';
 
 /**
  * Construit un serveur MCP configuré avec tous les outils MyKeyz.
@@ -16,5 +18,7 @@ export function createServer(): McpServer {
   registerAgendaTools(server);
   registerProjetTools(server);
   registerTransactionTools(server);
+  registerGedTools(server);
+  registerAiTools(server);
   return server;
 }

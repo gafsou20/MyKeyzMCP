@@ -14,3 +14,6 @@ export const list = (q: ListQuery = defaultListQuery()) =>
   http.post<DataTable<Projet>>('/projet/liste', q);
 
 export const get = (id: number) => http.get<ProjetDetail>(`/projet/${id}`);
+
+export const create = (projet: Partial<Projet>, contact: Partial<Contact> = {}) =>
+  http.post<{ projet: Projet; contact: Contact }>('/projet/create', { projet, contact });

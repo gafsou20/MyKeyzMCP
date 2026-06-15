@@ -55,4 +55,52 @@ export function registerAgendaTools(server: McpServer): void {
       return { content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }] };
     },
   );
+
+  // ── Écritures ──────────────────────────────────────────────────────────────
+
+  server.tool(
+    'create_event',
+    "Crée un événement/RDV d'agenda, ou le met à jour si `id` est fourni. Peut être rattaché à un contact ou un bien.",
+    {
+      id: z.number().int().optional().describe('Présent = mise à jour.'),
+      titre: z.string().describe('Titre du RDV.'),
+      date: z.string().describe('Date au format YYYY-MM-DD.'),
+      heure: z.string().optional().describe('Heure au format HH:MM.'),
+      categorie_id: z.number().int().describe('Catégorie (référentiel AgendaCategorie).'),
+      description: z.string().nullable().optional(),
+      telephone: z.string().nullable().optional(),
+      url: z.string().nullable().optional(),
+      model: z.enum(['Contact', 'Propriete']).optional().describe('Type d\'entité rattachée.'),
+      model_id: z.number().int().optional().describe('Id de l\'entité rattachée.'),
+    },
+    async ({ id, titre, date, heure, categorie_id, description, telephone, url, model, model_id }) => {
+      await ref.ensureLoaded();
+      const saved = await agendaApi.create({
+        ...(id ? { id } : {}),
+        ...(model && model_id ? { model, model_id } : {}),
+        data: {
+          titre,
+          date,
+          heure: heure ?? null,
+          categorie_id,
+          description: description ?? null,
+          telephone: telephone ?? null,
+          url: url ?? null,
+        },
+      });
+      return { content: [{ type: 'text', text: JSON.stringify(présenter(saved), null, 2) }] };
+    },
+  );
+
+  server.tool(
+    'delete_event',
+    '⚠️ Supprime définitivement un événement/RDV (suppression dure, irréversible).',
+    {
+      id: z.number().int().describe('Identifiant de l\'événement à supprimer.'),
+    },
+    async ({ id }) => {
+      const res = await agendaApi.remove(id);
+      return { content: [{ type: 'text', text: typeof res === 'string' ? res : JSON.stringify(res) }] };
+    },
+  );
 }

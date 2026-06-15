@@ -11,5 +11,8 @@ export const get = (id: number) => http.get<AgendaEvent>(`/agenda/${id}`);
 export const create = (payload: Partial<AgendaEvent> & { id?: number }) =>
   http.post<AgendaEvent>('/agenda/create', payload);
 
+/** GET /agenda/delete/{id} — suppression (hard delete côté API). */
+export const remove = (id: number) => http.get<string>(`/agenda/delete/${id}`);
+
 export const search = (q: string) =>
   http.get<AgendaEvent[]>(`/agenda/search/${encodeURIComponent(q)}`);

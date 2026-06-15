@@ -5,6 +5,24 @@ import { defaultListQuery } from '../types/api.js';
 import * as ref from '../core/referentials.js';
 import type { Contact } from '../types/models.js';
 
+/** Champs scalaires modifiables d'un contact (tous optionnels). */
+const contactFields = {
+  prenom: z.string().nullable().optional(),
+  nom: z.string().nullable().optional(),
+  socite: z.string().nullable().optional().describe('Société (orthographe API : socite).'),
+  telephone: z.string().nullable().optional(),
+  mobile: z.string().nullable().optional(),
+  email: z.string().nullable().optional(),
+  budget: z.number().nullable().optional(),
+  important: z.boolean().optional(),
+  status_id: z.number().int().optional().describe('Statut (référentiel ContactStatus).'),
+  source_id: z.number().int().optional().describe('Source (référentiel ContactSource).'),
+  categorie_id: z.number().int().nullable().optional(),
+  langue_id: z.number().int().nullable().optional(),
+  user_id: z.number().int().optional().describe('Agent assigné (référentiel User).'),
+  commentaire: z.string().nullable().optional(),
+};
+
 /** Projette un contact en objet compact et lisible (libellés résolus). */
 function présenter(c: Contact) {
   return {
@@ -73,6 +91,79 @@ export function registerContactTools(server: McpServer): void {
         })),
       };
       return { content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }] };
+    },
+  );
+
+  // ── Écritures ──────────────────────────────────────────────────────────────
+
+  server.tool(
+    'create_contact',
+    "Crée un contact, ou le met à jour si `id` est fourni. Soumis à l'ACL (création 13 / modification 14).",
+    {
+      id: z.number().int().optional().describe('Présent = mise à jour ; absent = création.'),
+      ...contactFields,
+    },
+    async (args) => {
+      await ref.ensureLoaded();
+      const saved = await contactsApi.create(args as Partial<Contact> & { id?: number });
+      return { content: [{ type: 'text', text: JSON.stringify(présenter(saved), null, 2) }] };
+    },
+  );
+
+  server.tool(
+    'set_contact_status',
+    "Change le statut d'un contact (ACL 15).",
+    {
+      id: z.number().int().describe('Identifiant du contact.'),
+      status_id: z.number().int().describe('Nouveau statut (référentiel ContactStatus).'),
+    },
+    async ({ id, status_id }) => {
+      await ref.ensureLoaded();
+      const saved = await contactsApi.create({ id, status_id });
+      return { content: [{ type: 'text', text: JSON.stringify(présenter(saved), null, 2) }] };
+    },
+  );
+
+  server.tool(
+    'set_contact_agent',
+    "Réassigne l'agent d'un contact (ACL 16).",
+    {
+      id: z.number().int().describe('Identifiant du contact.'),
+      user_id: z.number().int().describe('Nouvel agent (référentiel User).'),
+    },
+    async ({ id, user_id }) => {
+      await ref.ensureLoaded();
+      const saved = await contactsApi.create({ id, user_id });
+      return { content: [{ type: 'text', text: JSON.stringify(présenter(saved), null, 2) }] };
+    },
+  );
+
+  server.tool(
+    'add_contact_comment',
+    'Ajoute une note/commentaire sur un contact (ou met à jour une note via `id`).',
+    {
+      contact_id: z.number().int().describe('Identifiant du contact.'),
+      txt: z.string().min(1).describe('Texte de la note.'),
+      id: z.number().int().optional().describe('Présent = édition de la note.'),
+    },
+    async ({ contact_id, txt, id }) => {
+      const saved = await contactsApi.addComment(contact_id, txt, id);
+      return { content: [{ type: 'text', text: JSON.stringify(saved, null, 2) }] };
+    },
+  );
+
+  server.tool(
+    'create_search',
+    "Crée ou met à jour une recherche acheteur (critères) rattachée à un contact. `data` porte les critères libres (budget, localisation, nb pièces…).",
+    {
+      contact_id: z.number().int().describe('Contact propriétaire de la recherche.'),
+      status_id: z.number().int().describe('Statut de la recherche (référentiel).'),
+      data: z.record(z.unknown()).describe('Critères de recherche (objet libre).'),
+      id: z.number().int().optional().describe('Présent = mise à jour.'),
+    },
+    async ({ contact_id, status_id, data, id }) => {
+      const saved = await contactsApi.createSearch({ ...(id ? { id } : {}), contact_id, status_id, data });
+      return { content: [{ type: 'text', text: JSON.stringify(saved, null, 2) }] };
     },
   );
 }

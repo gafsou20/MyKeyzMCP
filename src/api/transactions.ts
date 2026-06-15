@@ -7,3 +7,6 @@ export const list = (q: ListQuery = defaultListQuery()) =>
   http.post<DataTable<Transaction>>('/transaction/liste', q);
 
 export const get = (id: number) => http.get<Transaction>(`/transaction/${id}`);
+
+export const create = (payload: Partial<Transaction> & { id?: number }) =>
+  http.post<Transaction>('/transaction/create', payload);

@@ -65,4 +65,33 @@ export function registerTransactionTools(server: McpServer): void {
       return { content: [{ type: 'text', text: JSON.stringify(présenter(tr), null, 2) }] };
     },
   );
+
+  // ── Écriture ────────────────────────────────────────────────────────────────
+
+  server.tool(
+    'create_transaction',
+    "Enregistre une transaction (vente/location), ou la met à jour via `id`. Sensible — soumis à l'ACL 29.",
+    {
+      id: z.number().int().optional().describe('Présent = mise à jour.'),
+      type_id: z.number().int().describe('Type de transaction (référentiel TransactionType).'),
+      client_id: z.number().int().describe('Contact client.'),
+      propriete_id: z.number().int().describe('Bien concerné.'),
+      montant_ht: z.number().describe('Montant hors taxes.'),
+      tva_percent: z.number().default(0).describe('Taux de TVA en %.'),
+      date: z.string().nullable().optional().describe('Date YYYY-MM-DD.'),
+    },
+    async ({ id, type_id, client_id, propriete_id, montant_ht, tva_percent, date }) => {
+      await ref.ensureLoaded();
+      const saved = await transactionsApi.create({
+        ...(id ? { id } : {}),
+        type_id,
+        client: { id: client_id, nom: null, prenom: null },
+        propriete: { id: propriete_id, titre: null },
+        montant_ht,
+        tva_percent,
+        date: date ?? null,
+      });
+      return { content: [{ type: 'text', text: JSON.stringify(présenter(saved), null, 2) }] };
+    },
+  );
 }

@@ -4,7 +4,8 @@ import * as projetsApi from '../api/projets.js';
 import { defaultListQuery } from '../types/api.js';
 import * as ref from '../core/referentials.js';
 import { addressLine } from '../core/format.js';
-import type { Projet } from '../types/models.js';
+import { adresseSchema } from './schemas.js';
+import type { Projet, Contact } from '../types/models.js';
 
 function présenter(p: Projet) {
   return {
@@ -63,6 +64,32 @@ export function registerProjetTools(server: McpServer): void {
         lots_lies: d.proprietes?.length ?? 0,
       };
       return { content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }] };
+    },
+  );
+
+  // ── Écriture ────────────────────────────────────────────────────────────────
+
+  server.tool(
+    'create_projet',
+    "Crée un projet (programme neuf), ou le met à jour via `id`. Soumis à l'ACL (ajout 17). Un promoteur (contact) peut être rattaché.",
+    {
+      id: z.number().int().optional().describe('Présent = mise à jour.'),
+      nom: z.string().optional(),
+      promoteur: z.string().nullable().optional(),
+      constructeur: z.string().nullable().optional(),
+      status_id: z.number().int().optional().describe('Référentiel ProjetStatus.'),
+      type_id: z.number().int().nullable().optional(),
+      date_livraison: z.string().nullable().optional().describe('Date YYYY-MM-DD.'),
+      prix_min: z.number().nullable().optional(),
+      prix_max: z.number().nullable().optional(),
+      adresse: adresseSchema.optional(),
+      contact_id: z.number().int().optional().describe('Promoteur existant à rattacher.'),
+    },
+    async ({ contact_id, ...projet }) => {
+      await ref.ensureLoaded();
+      const contact: Partial<Contact> = contact_id ? { id: contact_id } : {};
+      const saved = await projetsApi.create(projet as Partial<Projet>, contact);
+      return { content: [{ type: 'text', text: JSON.stringify(présenter(saved.projet), null, 2) }] };
     },
   );
 }
