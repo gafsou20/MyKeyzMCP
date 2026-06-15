@@ -5,6 +5,8 @@ import { defaultListQuery } from '../types/api.js';
 import * as ref from '../core/referentials.js';
 import { i18nText, addressLine } from '../core/format.js';
 import { i18nSchema, adresseSchema } from './schemas.js';
+import { structured } from './respond.js';
+import { proprieteItem, proprieteList, proprieteDetail } from './outputs.js';
 import type { Propriete } from '../types/models.js';
 
 /** Champs modifiables d'un bien (tous optionnels). */
@@ -59,15 +61,20 @@ function présenter(p: Propriete) {
 }
 
 export function registerProprieteTools(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     'list_proprietes',
-    "Liste les biens immobiliers (mandats) du CRM MyKeyz. Filtres simples + recherche par référence.",
     {
-      ref: z.string().optional().describe('Recherche par référence du bien.'),
-      transaction_id: z.number().int().optional().describe('Type de transaction (référentiel ProprieteTransaction).'),
-      bien_id: z.number().int().optional().describe('Type de bien (référentiel ProprieteBien).'),
-      limit: z.number().int().min(1).max(100).default(25),
-      page: z.number().int().min(1).default(1),
+      description:
+        "Liste les biens immobiliers (mandats) du CRM MyKeyz. Filtres simples + recherche par référence.",
+      inputSchema: {
+        ref: z.string().optional().describe('Recherche par référence du bien.'),
+        transaction_id: z.number().int().optional().describe('Type de transaction (référentiel ProprieteTransaction).'),
+        bien_id: z.number().int().optional().describe('Type de bien (référentiel ProprieteBien).'),
+        limit: z.number().int().min(1).max(100).default(25),
+        page: z.number().int().min(1).default(1),
+      },
+      outputSchema: proprieteList,
+      annotations: { readOnlyHint: true },
     },
     async ({ ref: refSearch, transaction_id, bien_id, limit, page }) => {
       await ref.ensureLoaded();
@@ -75,29 +82,30 @@ export function registerProprieteTools(server: McpServer): void {
       if (refSearch) filters.ref = refSearch;
       if (transaction_id !== undefined) filters.transaction_id = transaction_id;
       if (bien_id !== undefined) filters.bien_id = bien_id;
-
       const res = await proprietesApi.list(defaultListQuery({ filters, limit, page }));
-      const payload = {
+      return structured({
         total: res.totalRow,
         page: res.currentPage,
         count: res.data.length,
         proprietes: res.data.map(présenter),
-      };
-      return { content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }] };
+      });
     },
   );
 
-  server.tool(
+  server.registerTool(
     'get_propriete',
-    "Fiche détaillée d'un bien : caractéristiques, adresse, propriétaire, projet lié et acheteurs potentiels (matching).",
     {
-      id: z.number().int().describe('Identifiant du bien.'),
+      description:
+        "Fiche détaillée d'un bien : caractéristiques, adresse, propriétaire, projet lié et acheteurs potentiels (matching).",
+      inputSchema: { id: z.number().int().describe('Identifiant du bien.') },
+      outputSchema: proprieteDetail,
+      annotations: { readOnlyHint: true },
     },
     async ({ id }) => {
       await ref.ensureLoaded();
       const d = await proprietesApi.get(id);
       const p = d.propriete;
-      const payload = {
+      return structured({
         ...présenter(p),
         description: i18nText(p.description),
         proprietaire: d.contact
@@ -106,38 +114,44 @@ export function registerProprieteTools(server: McpServer): void {
         projet_lie: d.projet ? d.projet.nom || d.projet.ref : null,
         acheteurs_potentiels: d.searchs?.length ?? 0,
         rdv: (d.agenda ?? []).map((e) => ({ titre: e.data?.titre, date: e.data?.date, heure: e.data?.heure })),
-      };
-      return { content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }] };
+      });
     },
   );
 
   // ── Écritures ──────────────────────────────────────────────────────────────
 
-  server.tool(
+  server.registerTool(
     'create_propriete',
-    "Crée un bien, ou le met à jour si `id` est fourni. Soumis à l'ACL (ajout 17 / modification 18). Champs i18n (titre/description) au format {fr,he,en}.",
     {
-      id: z.number().int().optional().describe('Présent = mise à jour ; absent = création.'),
-      ...proprieteFields,
+      description:
+        "Crée un bien, ou le met à jour si `id` est fourni. ACL : ajout 17 / modification 18. Champs i18n (titre/description) au format {fr,he,en}.",
+      inputSchema: {
+        id: z.number().int().optional().describe('Présent = mise à jour ; absent = création.'),
+        ...proprieteFields,
+      },
+      outputSchema: proprieteItem,
     },
     async (args) => {
       await ref.ensureLoaded();
       const saved = await proprietesApi.create(args as Partial<Propriete> & { id?: number });
-      return { content: [{ type: 'text', text: JSON.stringify(présenter(saved), null, 2) }] };
+      return structured(présenter(saved));
     },
   );
 
-  server.tool(
+  server.registerTool(
     'set_propriete_status',
-    "Change le statut d'un bien (ACL 19).",
     {
-      id: z.number().int().describe('Identifiant du bien.'),
-      status_id: z.number().int().describe('Nouveau statut (référentiel ProprieteStatus).'),
+      description: "Change le statut d'un bien (ACL 19).",
+      inputSchema: {
+        id: z.number().int().describe('Identifiant du bien.'),
+        status_id: z.number().int().describe('Nouveau statut (référentiel ProprieteStatus).'),
+      },
+      outputSchema: proprieteItem,
     },
     async ({ id, status_id }) => {
       await ref.ensureLoaded();
       const saved = await proprietesApi.create({ id, status_id });
-      return { content: [{ type: 'text', text: JSON.stringify(présenter(saved), null, 2) }] };
+      return structured(présenter(saved));
     },
   );
 }

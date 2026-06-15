@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as ref from '../core/referentials.js';
+import { structured } from './respond.js';
+import { referentialOut } from './outputs.js';
 
 const DESCRIPTION = [
   "Dictionnaire des référentiels MyKeyz (équivaut à /param/all). ESSENTIEL :",
@@ -12,40 +14,37 @@ const DESCRIPTION = [
 ].join(' ');
 
 export function registerReferentialTools(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     'list_referentials',
-    DESCRIPTION,
     {
-      model: z
-        .string()
-        .optional()
-        .describe('Nom du référentiel (ex. "ContactStatus"). Omis = liste les référentiels existants.'),
+      description: DESCRIPTION,
+      inputSchema: {
+        model: z
+          .string()
+          .optional()
+          .describe('Nom du référentiel (ex. "ContactStatus"). Omis = liste les référentiels existants.'),
+      },
+      outputSchema: referentialOut,
+      annotations: { readOnlyHint: true },
     },
     async ({ model }) => {
       await ref.ensureLoaded();
       if (!model) {
-        const payload = {
-          note: "Appelle à nouveau avec un `model` pour obtenir les id ↔ libellés.",
+        return structured({
+          note: 'Appelle à nouveau avec un `model` pour obtenir les id ↔ libellés.',
           available_models: ref.modelNames(),
-        };
-        return { content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }] };
+        });
       }
       const items = ref.entries(model);
       if (!items.length) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(
-                { model, items: [], hint: 'Référentiel inconnu — vérifie le nom via un appel sans `model`.', available_models: ref.modelNames() },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return structured({
+          model,
+          items: [],
+          hint: 'Référentiel inconnu — vérifie le nom via un appel sans `model`.',
+          available_models: ref.modelNames(),
+        });
       }
-      return { content: [{ type: 'text', text: JSON.stringify({ model, count: items.length, items }, null, 2) }] };
+      return structured({ model, count: items.length, items });
     },
   );
 }

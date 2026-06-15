@@ -3,6 +3,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as transactionsApi from '../api/transactions.js';
 import { defaultListQuery } from '../types/api.js';
 import * as ref from '../core/referentials.js';
+import { structured } from './respond.js';
+import { transactionItem, transactionList } from './outputs.js';
 import type { Transaction } from '../types/models.js';
 
 function clientName(tr: Transaction): string | null {
@@ -33,52 +35,62 @@ function présenter(tr: Transaction) {
 }
 
 export function registerTransactionTools(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     'list_transactions',
-    'Liste les transactions (ventes/locations conclues) du CRM MyKeyz. Nécessite le droit ACL transactions.',
     {
-      limit: z.number().int().min(1).max(100).default(25),
-      page: z.number().int().min(1).default(1),
+      description:
+        'Liste les transactions (ventes/locations conclues) du CRM MyKeyz. Nécessite le droit ACL transactions.',
+      inputSchema: {
+        limit: z.number().int().min(1).max(100).default(25),
+        page: z.number().int().min(1).default(1),
+      },
+      outputSchema: transactionList,
+      annotations: { readOnlyHint: true },
     },
     async ({ limit, page }) => {
       await ref.ensureLoaded();
       const res = await transactionsApi.list(defaultListQuery({ limit, page }));
-      const payload = {
+      return structured({
         total: res.totalRow,
         page: res.currentPage,
         count: res.data.length,
         transactions: res.data.map(présenter),
-      };
-      return { content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }] };
+      });
     },
   );
 
-  server.tool(
+  server.registerTool(
     'get_transaction',
-    "Fiche détaillée d'une transaction (montants, client, bien, agents + commissions).",
     {
-      id: z.number().int().describe('Identifiant de la transaction.'),
+      description: "Fiche détaillée d'une transaction (montants, client, bien, agents + commissions).",
+      inputSchema: { id: z.number().int().describe('Identifiant de la transaction.') },
+      outputSchema: transactionItem,
+      annotations: { readOnlyHint: true },
     },
     async ({ id }) => {
       await ref.ensureLoaded();
       const tr = await transactionsApi.get(id);
-      return { content: [{ type: 'text', text: JSON.stringify(présenter(tr), null, 2) }] };
+      return structured(présenter(tr));
     },
   );
 
   // ── Écriture ────────────────────────────────────────────────────────────────
 
-  server.tool(
+  server.registerTool(
     'create_transaction',
-    "Enregistre une transaction (vente/location), ou la met à jour via `id`. Sensible — soumis à l'ACL 29.",
     {
-      id: z.number().int().optional().describe('Présent = mise à jour.'),
-      type_id: z.number().int().describe('Type de transaction (référentiel TransactionType).'),
-      client_id: z.number().int().describe('Contact client.'),
-      propriete_id: z.number().int().describe('Bien concerné.'),
-      montant_ht: z.number().describe('Montant hors taxes.'),
-      tva_percent: z.number().default(0).describe('Taux de TVA en %.'),
-      date: z.string().nullable().optional().describe('Date YYYY-MM-DD.'),
+      description:
+        "Enregistre une transaction (vente/location), ou la met à jour via `id`. Sensible — soumis à l'ACL 29.",
+      inputSchema: {
+        id: z.number().int().optional().describe('Présent = mise à jour.'),
+        type_id: z.number().int().describe('Type de transaction (référentiel TransactionType).'),
+        client_id: z.number().int().describe('Contact client.'),
+        propriete_id: z.number().int().describe('Bien concerné.'),
+        montant_ht: z.number().describe('Montant hors taxes.'),
+        tva_percent: z.number().default(0).describe('Taux de TVA en %.'),
+        date: z.string().nullable().optional().describe('Date YYYY-MM-DD.'),
+      },
+      outputSchema: transactionItem,
     },
     async ({ id, type_id, client_id, propriete_id, montant_ht, tva_percent, date }) => {
       await ref.ensureLoaded();
@@ -91,7 +103,7 @@ export function registerTransactionTools(server: McpServer): void {
         tva_percent,
         date: date ?? null,
       });
-      return { content: [{ type: 'text', text: JSON.stringify(présenter(saved), null, 2) }] };
+      return structured(présenter(saved));
     },
   );
 }
