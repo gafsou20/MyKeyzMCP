@@ -28,7 +28,8 @@ export function registerProjetTools(server: McpServer): void {
   server.registerTool(
     'list_projets',
     {
-      description: 'Liste les projets immobiliers (programmes neufs) du CRM MyKeyz.',
+      description:
+        'Liste les projets immobiliers (programmes neufs). Ids résolus : statut←ProjetStatus, agent←User.',
       inputSchema: {
         nom: z.string().optional().describe('Recherche par nom de projet.'),
         limit: z.number().int().min(1).max(100).default(25),
@@ -54,7 +55,8 @@ export function registerProjetTools(server: McpServer): void {
   server.registerTool(
     'get_projet',
     {
-      description: "Fiche détaillée d'un projet : infos, promoteur, lots (biens) liés et contact.",
+      description:
+        "Fiche détaillée d'un projet : infos, promoteur, lots (biens) liés, contact. Ids résolus : statut←ProjetStatus, agent←User.",
       inputSchema: { id: z.number().int().describe('Identifiant du projet.') },
       outputSchema: projetDetail,
       annotations: { readOnlyHint: true },
@@ -79,7 +81,7 @@ export function registerProjetTools(server: McpServer): void {
     'create_projet',
     {
       description:
-        "Crée un projet (programme neuf), ou le met à jour via `id`. ACL : ajout 17. Un promoteur (contact) peut être rattaché.",
+        "Crée un projet (ou MAJ via `id`). Champs *_id à résoudre via list_referentials : status_id→ProjetStatus, type_id→ProjetType. Un promoteur (contact existant) se rattache via `contact_id`. ACL : ajout 17.",
       inputSchema: {
         id: z.number().int().optional().describe('Présent = mise à jour.'),
         nom: z.string().optional(),

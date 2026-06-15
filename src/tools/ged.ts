@@ -8,7 +8,8 @@ export function registerGedTools(server: McpServer): void {
   server.registerTool(
     'list_ged',
     {
-      description: "Liste les fichiers (GED) rattachés à une entité (Contact, Propriete, Projet).",
+      description:
+        "Liste les fichiers (GED) rattachés à une entité. `model` = nom de l'entité ('Contact' | 'Propriete' | 'Projet'), `model_id` = son id.",
       inputSchema: {
         model: z.string().describe('Type d\'entité, ex. "Propriete" ou "Contact".'),
         model_id: z.number().int().describe("Identifiant de l'entité."),

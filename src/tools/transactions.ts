@@ -39,7 +39,7 @@ export function registerTransactionTools(server: McpServer): void {
     'list_transactions',
     {
       description:
-        'Liste les transactions (ventes/locations conclues) du CRM MyKeyz. Nécessite le droit ACL transactions.',
+        "Liste les transactions (ventes/locations conclues). Ids résolus : type←TransactionType ; agents nommés (User) avec commission. Nécessite l'ACL transactions (29).",
       inputSchema: {
         limit: z.number().int().min(1).max(100).default(25),
         page: z.number().int().min(1).default(1),
@@ -62,7 +62,8 @@ export function registerTransactionTools(server: McpServer): void {
   server.registerTool(
     'get_transaction',
     {
-      description: "Fiche détaillée d'une transaction (montants, client, bien, agents + commissions).",
+      description:
+        "Fiche détaillée d'une transaction (montants HT/TTC, client, bien, agents + commissions). Id résolu : type←TransactionType.",
       inputSchema: { id: z.number().int().describe('Identifiant de la transaction.') },
       outputSchema: transactionItem,
       annotations: { readOnlyHint: true },
@@ -80,7 +81,7 @@ export function registerTransactionTools(server: McpServer): void {
     'create_transaction',
     {
       description:
-        "Enregistre une transaction (vente/location), ou la met à jour via `id`. Sensible — soumis à l'ACL 29.",
+        "Enregistre une transaction (ou MAJ via `id`). `type_id`→TransactionType (list_referentials). `client_id` = id d'un contact, `propriete_id` = id d'un bien. Sensible — ACL 29.",
       inputSchema: {
         id: z.number().int().optional().describe('Présent = mise à jour.'),
         type_id: z.number().int().describe('Type de transaction (référentiel TransactionType).'),

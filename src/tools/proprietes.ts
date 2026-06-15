@@ -65,7 +65,7 @@ export function registerProprieteTools(server: McpServer): void {
     'list_proprietes',
     {
       description:
-        "Liste les biens immobiliers (mandats) du CRM MyKeyz. Filtres simples + recherche par référence.",
+        "Liste les biens (mandats). Résultats avec libellés résolus : transaction←ProprieteTransaction, type←ProprieteBien, statut←ProprieteStatus, état←ProprieteEtat, agent←User. Pour filtrer par transaction_id/bien_id, récupère d'abord l'id via list_referentials('ProprieteTransaction' / 'ProprieteBien').",
       inputSchema: {
         ref: z.string().optional().describe('Recherche par référence du bien.'),
         transaction_id: z.number().int().optional().describe('Type de transaction (référentiel ProprieteTransaction).'),
@@ -96,7 +96,7 @@ export function registerProprieteTools(server: McpServer): void {
     'get_propriete',
     {
       description:
-        "Fiche détaillée d'un bien : caractéristiques, adresse, propriétaire, projet lié et acheteurs potentiels (matching).",
+        "Fiche détaillée d'un bien : caractéristiques, adresse, propriétaire, projet lié, acheteurs potentiels (matching). Ids résolus en libellés : transaction←ProprieteTransaction, type←ProprieteBien, statut←ProprieteStatus, état←ProprieteEtat, agent←User.",
       inputSchema: { id: z.number().int().describe('Identifiant du bien.') },
       outputSchema: proprieteDetail,
       annotations: { readOnlyHint: true },
@@ -124,7 +124,7 @@ export function registerProprieteTools(server: McpServer): void {
     'create_propriete',
     {
       description:
-        "Crée un bien, ou le met à jour si `id` est fourni. ACL : ajout 17 / modification 18. Champs i18n (titre/description) au format {fr,he,en}.",
+        "Crée un bien (ou MAJ si `id`). Champs *_id à résoudre via list_referentials : transaction_id→ProprieteTransaction, bien_id→ProprieteBien, bien_option_id→ProprieteBienOption, etat_id→ProprieteEtat, status_id→ProprieteStatus. titre/description = objet {fr,he,en}. ACL : ajout 17 / modification 18.",
       inputSchema: {
         id: z.number().int().optional().describe('Présent = mise à jour ; absent = création.'),
         ...proprieteFields,
@@ -141,7 +141,8 @@ export function registerProprieteTools(server: McpServer): void {
   server.registerTool(
     'set_propriete_status',
     {
-      description: "Change le statut d'un bien (ACL 19).",
+      description:
+        "Change le statut d'un bien. `status_id` provient du référentiel ProprieteStatus → list_referentials('ProprieteStatus'). ACL 19.",
       inputSchema: {
         id: z.number().int().describe('Identifiant du bien.'),
         status_id: z.number().int().describe('Nouveau statut (référentiel ProprieteStatus).'),

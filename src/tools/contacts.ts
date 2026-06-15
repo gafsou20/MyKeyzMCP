@@ -52,7 +52,7 @@ export function registerContactTools(server: McpServer): void {
     'list_contacts',
     {
       description:
-        "Liste les contacts du CRM MyKeyz. Recherche texte optionnelle (nom, téléphone, email) et filtres simples. Renvoie des libellés résolus (statut, source, agent).",
+        "Liste les contacts du CRM MyKeyz (recherche texte + filtres). Dans les résultats, les ids de jointure sont DÉJÀ résolus en libellés : statut←ContactStatus, source←ContactSource, agent←User. (Réfs consultables via list_referentials.)",
       inputSchema: {
         search: z.string().optional().describe('Recherche texte (nom, téléphone, email…).'),
         important: z.boolean().optional().describe('Ne garder que les contacts importants.'),
@@ -81,7 +81,7 @@ export function registerContactTools(server: McpServer): void {
     'get_contact',
     {
       description:
-        "Fiche détaillée d'un contact : coordonnées, recherches, biens, projets, RDV et commentaires liés (libellés résolus).",
+        "Fiche détaillée d'un contact : coordonnées, recherches, biens, projets, RDV et commentaires liés. Tous les ids sont résolus en libellés : statut←ContactStatus, source←ContactSource, catégorie←ContactCategorie, langue←Langue, agent/auteur←User.",
       inputSchema: { id: z.number().int().describe('Identifiant du contact.') },
       outputSchema: contactDetail,
       annotations: { readOnlyHint: true },
@@ -113,7 +113,7 @@ export function registerContactTools(server: McpServer): void {
     'create_contact',
     {
       description:
-        "Crée un contact, ou le met à jour si `id` est fourni. `status_id` et `categorie_id` sont OBLIGATOIRES (résoudre via les référentiels ContactStatus / ContactCategorie). ACL : création 13 / modification 14.",
+        "Crée un contact (ou le met à jour si `id` fourni). Les champs *_id pointent vers des référentiels : RÉSOUS-LES via list_referentials AVANT l'appel — status_id→ContactStatus, categorie_id→ContactCategorie (ces 2 sont OBLIGATOIRES), source_id→ContactSource, langue_id→Langue, user_id→User. ACL : création 13 / modification 14.",
       inputSchema: {
         id: z.number().int().optional().describe('Présent = mise à jour ; absent = création.'),
         ...contactFields,
@@ -132,7 +132,8 @@ export function registerContactTools(server: McpServer): void {
   server.registerTool(
     'set_contact_status',
     {
-      description: "Change le statut d'un contact (ACL 15).",
+      description:
+        "Change le statut d'un contact. `status_id` provient du référentiel ContactStatus → list_referentials('ContactStatus'). ACL 15.",
       inputSchema: {
         id: z.number().int().describe('Identifiant du contact.'),
         status_id: z.number().int().describe('Nouveau statut (référentiel ContactStatus).'),
@@ -149,7 +150,8 @@ export function registerContactTools(server: McpServer): void {
   server.registerTool(
     'set_contact_agent',
     {
-      description: "Réassigne l'agent d'un contact (ACL 16).",
+      description:
+        "Réassigne l'agent d'un contact. `user_id` provient du référentiel User → list_referentials('User'). ACL 16.",
       inputSchema: {
         id: z.number().int().describe('Identifiant du contact.'),
         user_id: z.number().int().describe('Nouvel agent (référentiel User).'),
@@ -184,7 +186,7 @@ export function registerContactTools(server: McpServer): void {
     'create_search',
     {
       description:
-        "Crée ou met à jour une recherche acheteur (critères) rattachée à un contact. `data` porte les critères libres (budget, localisation, nb pièces…).",
+        "Crée/MAJ une recherche acheteur (critères) rattachée à un contact. `status_id` provient d'un référentiel (list_referentials). `data` = critères libres (budget, localité, nb pièces…).",
       inputSchema: {
         contact_id: z.number().int().describe('Contact propriétaire de la recherche.'),
         status_id: z.number().int().describe('Statut de la recherche (référentiel).'),

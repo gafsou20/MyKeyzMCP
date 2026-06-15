@@ -25,7 +25,8 @@ export function registerAgendaTools(server: McpServer): void {
   server.registerTool(
     'list_agenda',
     {
-      description: "Liste les événements / rendez-vous de l'agenda MyKeyz, triés par date.",
+      description:
+        "Liste les RDV/événements de l'agenda, triés par date. Ids résolus : catégorie←AgendaCategorie, agent←User. `rattachement` indique l'entité liée (Contact/Propriete).",
       inputSchema: {
         limit: z.number().int().min(1).max(200).default(50),
         page: z.number().int().min(1).default(1),
@@ -68,7 +69,7 @@ export function registerAgendaTools(server: McpServer): void {
     'create_event',
     {
       description:
-        "Crée un événement/RDV d'agenda, ou le met à jour si `id` est fourni. Peut être rattaché à un contact ou un bien.",
+        "Crée un RDV/événement (ou MAJ si `id`). `categorie_id` provient du référentiel AgendaCategorie → list_referentials('AgendaCategorie'). Rattachable à un Contact ou une Propriete via `model` + `model_id`.",
       inputSchema: {
         id: z.number().int().optional().describe('Présent = mise à jour.'),
         titre: z.string().describe('Titre du RDV.'),
