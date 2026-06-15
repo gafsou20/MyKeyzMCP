@@ -98,10 +98,12 @@ export function registerContactTools(server: McpServer): void {
 
   server.tool(
     'create_contact',
-    "Crée un contact, ou le met à jour si `id` est fourni. Soumis à l'ACL (création 13 / modification 14).",
+    "Crée un contact, ou le met à jour si `id` est fourni. `status_id` et `categorie_id` sont OBLIGATOIRES (résoudre via les référentiels ContactStatus / ContactCategorie). Soumis à l'ACL (création 13 / modification 14).",
     {
       id: z.number().int().optional().describe('Présent = mise à jour ; absent = création.'),
       ...contactFields,
+      status_id: z.number().int().describe('Statut (OBLIGATOIRE) — référentiel ContactStatus.'),
+      categorie_id: z.number().int().describe('Catégorie (OBLIGATOIRE) — référentiel ContactCategorie.'),
     },
     async (args) => {
       await ref.ensureLoaded();
