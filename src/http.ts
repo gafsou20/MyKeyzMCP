@@ -4,7 +4,10 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { createServer } from './server.js';
 import { runWithToken } from './core/context.js';
 
-const PORT = Number(process.env.PORT ?? 8787);
+// Port/host. Derrière Plesk Passenger, PORT peut être un chemin de socket Unix
+// (donc on ne force PAS Number). En pm2 + reverse-proxy, on fixe PORT + HOST.
+const PORT: string | number = process.env.PORT ?? 8787;
+const HOST = process.env.HOST; // ex. 127.0.0.1 (bind local derrière proxy)
 
 /**
  * Extrait le token MyKeyz du header Authorization (tolère le préfixe Bearer).
@@ -62,6 +65,10 @@ const methodNotAllowed = (_req: express.Request, res: express.Response) =>
 app.get('/mcp', methodNotAllowed);
 app.delete('/mcp', methodNotAllowed);
 
-app.listen(PORT, () => {
-  console.error(`[mykeyz-mcp] HTTP prêt sur :${PORT} (POST /mcp).`);
-});
+const ready = () => console.error(`[mykeyz-mcp] HTTP prêt sur ${HOST ?? '*'}:${PORT} (POST /mcp).`);
+if (HOST) {
+  app.listen(Number(PORT), HOST, ready);
+} else {
+  // PORT peut être numérique ou un socket (Passenger) → on le passe tel quel.
+  app.listen(PORT as number, ready);
+}

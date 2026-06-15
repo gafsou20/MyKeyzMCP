@@ -12,7 +12,12 @@
     "dev:http": "tsx watch src/http.ts",
     "start:http": "tsx src/http.ts",
     "build": "tsc",
+    "serve": "node dist/http.js",
+    "serve:stdio": "node dist/index.js",
     "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
