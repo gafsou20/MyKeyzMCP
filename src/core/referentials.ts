@@ -63,3 +63,17 @@ export function label(model: string, id: number | null | undefined, lang: Locale
 export function menuItems(): MenuItem[] {
   return store()?.menu ?? [];
 }
+
+/** Noms de tous les référentiels disponibles (ex. ContactStatus, ProprieteBien…). */
+export function modelNames(): string[] {
+  return Object.keys(store()?.params ?? {}).sort();
+}
+
+/** Couples id ↔ libellé d'un référentiel (clé snake_case d'origine incluse). */
+export function entries(model: string, lang?: Locale): { id: number; label: string; key: string }[] {
+  return list(model).map((x) => ({
+    id: x.id,
+    label: label(model, x.id, lang),
+    key: x.titre ?? '',
+  }));
+}
