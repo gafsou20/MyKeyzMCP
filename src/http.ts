@@ -3,43 +3,43 @@ import express from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createServer } from './server.js';
 import { runWithToken } from './core/context.js';
+import { oauthRouter, resolveBearer, baseUrl } from './auth/oauth.js';
+import { OAUTH_ENABLED } from './auth/crypto.js';
 
 // Port/host. Derrière Plesk Passenger, PORT peut être un chemin de socket Unix
 // (donc on ne force PAS Number). En pm2 + reverse-proxy, on fixe PORT + HOST.
 const PORT: string | number = process.env.PORT ?? 8787;
 const HOST = process.env.HOST; // ex. 127.0.0.1 (bind local derrière proxy)
 
-/**
- * Extrait le token MyKeyz du header Authorization (tolère le préfixe Bearer).
- * Aucun repli serveur : sans header, la requête est refusée (multi-locataire).
- */
-function tokenFromRequest(req: express.Request): string | null {
-  const raw = req.headers['authorization'];
-  if (!raw) return null;
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  return value.replace(/^Bearer\s+/i, '').trim() || null;
-}
-
 const app = express();
 app.use(express.json({ limit: '5mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+// Couche OAuth (découverte, enregistrement, authorize, token).
+app.use(oauthRouter);
 
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, name: 'mykeyz-mcp' });
+  res.json({ ok: true, name: 'mykeyz-mcp', oauth: OAUTH_ENABLED });
 });
 
 /**
  * Endpoint MCP en mode **stateless** : un serveur + transport éphémères par
- * requête, exécutés dans le contexte du token de l'appelant. Pas d'état partagé
- * entre utilisateurs → sûr en multi-locataire.
+ * requête, exécutés dans le contexte du token de l'appelant (OAuth ou PAT brut).
  */
 app.post('/mcp', async (req, res) => {
-  const token = tokenFromRequest(req);
+  const token = await resolveBearer(req.headers['authorization'] as string | undefined);
   if (!token) {
-    res.status(401).json({
-      jsonrpc: '2.0',
-      error: { code: -32001, message: 'token MyKeyz manquant (header Authorization).' },
-      id: null,
-    });
+    res
+      .status(401)
+      .set(
+        'WWW-Authenticate',
+        `Bearer resource_metadata="${baseUrl(req)}/.well-known/oauth-protected-resource"`,
+      )
+      .json({
+        jsonrpc: '2.0',
+        error: { code: -32001, message: 'authentification requise (token MyKeyz ou OAuth).' },
+        id: null,
+      });
     return;
   }
 
@@ -65,7 +65,10 @@ const methodNotAllowed = (_req: express.Request, res: express.Response) =>
 app.get('/mcp', methodNotAllowed);
 app.delete('/mcp', methodNotAllowed);
 
-const ready = () => console.error(`[mykeyz-mcp] HTTP prêt sur ${HOST ?? '*'}:${PORT} (POST /mcp).`);
+const ready = () =>
+  console.error(
+    `[mykeyz-mcp] HTTP prêt sur ${HOST ?? '*'}:${PORT} (POST /mcp) — OAuth: ${OAUTH_ENABLED ? 'on' : 'off'}.`,
+  );
 if (HOST) {
   app.listen(Number(PORT), HOST, ready);
 } else {
