@@ -14,4 +14,4 @@ export interface LoginResult {
  * Endpoint public (aucun token requis) ; sert de socle au pont OAuth.
  */
 export const login = (email: string, password: string) =>
-  http.post<LoginResult>('/authorization/create', { email, password });
+  http.post<LoginResult>('/authorization/create', { email, password, plateform:"MCP" });
