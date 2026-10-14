@@ -1,7 +1,7 @@
 # MyKeyzMCP — PROJECT.md
 
 > Document de référence **autonome** du serveur MCP MyKeyz.
-> Dernière mise à jour : 14/10/2026 (v0.2.0).
+> Dernière mise à jour : 14/10/2026 (v0.3.0).
 
 ---
 
@@ -15,7 +15,7 @@ Il ne possède **aucune donnée** ni base : c'est une couche de traduction au-de
 
 | Brique | Emplacement | Rôle |
 |---|---|---|
-| Back (API) | `https://api.mykeyz.jg.app` — miroir FTP local `/root/mykeyz-backend` (pas de git) | PHP 7.2 + Phalcon Micro + MongoDB. **Ne pas modifier depuis ce projet.** |
+| Back (API) | `https://api.mykeyz.jg.app` — miroir FTP local `/root/mykeyz-backend` (pas de git, creds `.env.local`) | PHP 7.2 + Phalcon Micro + MongoDB. **Règle (Jessy, 14/10/2026) : ne jamais modifier l'existant ; ajouts autorisés uniquement via NOUVEAUX controller + router** (`php -l` 7.2 avant upload). |
 | Front CRM | `/root/CRMMyKeyzV2` (Vue 2 + BootstrapVue) | **Source de vérité des jointures** objets ↔ Param |
 | Base | MongoDB `mykeyz-v2` (copie locale Mongo 27020) | Données réelles — analyse uniquement |
 | MCP | `/root/MyKeyzMCP` — github.com/gafsou20/MyKeyzMCP · `main` | Ce projet |
@@ -90,13 +90,13 @@ Le MCP les applique :
 
 Validations de Jessy (14/10/2026) : statut de projet = **ProjetStatus** (la collection `model` qui dit ProprieteStatus est fausse) ; `projet.permis` = **ProjetPermis** (ancien booléen obsolète) ; `etage`/`superficie`/`parking_place` = nombres.
 
-## 6. Outils (32)
+## 6. Outils (34)
 
 | Domaine | Outils |
 |---|---|
 | Session / référentiels | `whoami`, `list_referentials` |
 | Contacts | `list_contacts` (texte, téléphone, statut, catégorie, source, agent, important, dates création/modif, tri), `get_contact` (fiche + recherches + biens + projets + RDV + notes), `create_contact`, `update_contact`, `set_contact_status` (+ note), `add_contact_note` |
-| Recherches acheteur | `create_search`, `update_search`, `find_matching_proprietes` (contact → biens), `find_buyers` (bien → contacts) |
+| Recherches acheteur | `list_searches`, `search_stats` (tout le périmètre), `create_search`, `update_search`, `find_matching_proprietes` (contact → biens), `find_buyers` (bien → contacts) |
 | Biens | `list_proprietes` (mêmes critères qu'une recherche + référence, statut, agent, annonces scrapées), `get_propriete`, `create_propriete`, `update_propriete` |
 | Agenda | `list_agenda` (période, catégorie, fiche liée), `search_agenda`, `create_event`, `update_event`, `delete_event` |
 | Projets | `list_projets`, `get_projet` (+ lots), `create_projet`, `update_projet` |
@@ -117,14 +117,27 @@ Validations de Jessy (14/10/2026) : statut de projet = **ProjetStatus** (la coll
 | Agenda | `POST /agenda/liste` | uniquement les RDV de l'utilisateur, **pas de pagination serveur** ; filtre période via `min_data.time`/`max_data.time` (epoch 00:00 **UTC**) |
 | Écritures | `POST /<x>/create` | création **ou** mise à jour si `id` |
 
+## 7 bis. Routes back dédiées au MCP (ajoutées le 14/10/2026)
+
+Nouveaux fichiers, lecture seule, sans impact sur l'existant : `routes/mcp.php` + `controllers/McpController.php` (en prod sur api.mykeyz.jg.app, copie dans `/root/mykeyz-backend`).
+
+| Route | Rôle | Outil MCP |
+|---|---|---|
+| `POST /mcp/search/liste` | recherches acheteur de **tout le périmètre** (env courant + contacts des agents visibles, `old_user` pour le rôle 3), contact embarqué, filtres `status_id`, `villes`, `quartier_id`, `transaction_id`, `bien_id`, `contact_id`, `contact_user_id`, `prix`, `pieces`, `superficie`, `min/max_date_create`, `inclure_indifferent` | `list_searches` |
+| `POST /mcp/search/stats` | mêmes filtres → total + répartition par ville / transaction / statut | `search_stats` |
+| `GET /mcp/propriete/{id}/buyers?actives=1` | matching bien → acheteurs = logique de `Propriete::getSearchs()` mais **tolérante aux recherches incomplètes** et limitée au périmètre, contact embarqué | `find_buyers`, compteur de `get_propriete` |
+
+`inclure_indifferent` (défaut true) : une recherche sans critère sur la ville / transaction / type (tableau vide = accepte tout) est comptée.
+
 ## 8. Pièges connus
 
 1. **Mises à jour partielles dangereuses côté back** : `/contact/create` réécrit `old_user` à partir de la requête → toujours envoyer la **fiche complète fusionnée** (fait par `update_contact`). Idem biens, RDV (`data` remplacé en bloc), recherches (`data` remplacé), projets.
 2. **Création de contact** : l'API force l'agent = créateur → `create_contact` réassigne ensuite si un agent est demandé. Doublon de téléphone (8 derniers chiffres) refusé avec l'id existant.
 3. **Projets** : `/projet/create` (ré)enregistre aussi le contact promoteur → toujours lui renvoyer le contact complet. Projet sans contact accessible = modification refusée (sinon création d'un contact vide).
-4. **Recherches acheteur** : seules les clés du format API sont valides ; toute autre clé est ignorée silencieusement et la recherche ne matche jamais. Cas réel : **recherche #1533** (contact 2147, 27/07/2026) créée par l'ancienne version du MCP avec `{ville, pieces_min, pieces_max, budget_max}` — **à corriger en prod** (`update_search` purge les clés hors format).
+4. **Recherches acheteur** : seules les clés du format API sont valides. Cas réel : **recherche #1533** (contact 2147, 27/07/2026) créée par l'ancienne version du MCP avec `{ville, pieces_min, pieces_max, budget_max}`. Conséquence grave : sans `data.transaction_id`, l'agrégation de `Propriete::getSearchs()` lève « $in requires an array », erreur **avalée** par `DataQuery::runQuery` → **0 acheteur potentiel sur TOUS les biens, dans le CRM comme dans le MCP, depuis le 27/07**. Correctif donné à Jessy (update Mongo de `data` en prod). La route `/mcp/propriete/{id}/buyers` est insensible à ce cas.
 5. **Regex** : les filtres texte sont des `$regex` → échapper (`+` des téléphones, parenthèses…).
-6. **Villes** : une même ville peut exister sous deux graphies (« Tel Aviv-Yafo » / « תל אביב-יפו ») → un critère sur l'une ne trouve pas l'autre.
+6. **Villes** : une même ville existe sous plusieurs graphies (« Tel Aviv-Yafo », « Tel Aviv-Jaffa », « תל אביב-יפו »). En lecture (list_proprietes, find_matching_proprietes, list_searches, search_stats), le MCP étend aux graphies connues (`VILLE_ALIASES` dans `tools/searches.ts`). En écriture, on stocke la graphie du référentiel.
+10. **Clients MCP (ChatGPT…)** : ils mettent la liste des outils en cache ; après un déploiement qui change les schémas, **actualiser / reconnecter le connecteur**, sinon le client envoie les anciens paramètres (ex. `categorie_id` au lieu de `categorie`).
 7. **`_id` Mongo** renvoyé sous forme `{ $oid }` → aplati par `core/normalize.ts` et retiré avant renvoi à l'API.
 8. **Agenda** : `env_id` non posé par l'API à la création (comportement back, sans impact).
 9. Le cache des référentiels dure 10 min : une valeur ajoutée dans le CRM peut mettre ce délai à apparaître.
@@ -148,7 +161,7 @@ Non validé contre la vraie API : écritures réelles (faute de compte de test).
 
 - Déployer la v0.2.0 et activer l'OAuth.
 - Tester les écritures contre la vraie API avec un compte de test.
-- Corriger la recherche #1533 en prod.
+- Corriger la recherche #1533 en prod (casse le matching bien → acheteurs du CRM).
 - Retravailler les transactions (quand ce sera dans le périmètre).
 - Alléger la liste des outils (~48 000 caractères, surtout les schémas de sortie des transactions).
 - Ajouter une suite de tests automatisée (fixtures anonymisées).
@@ -159,4 +172,5 @@ Non validé contre la vraie API : écritures réelles (faute de compte de test).
 |---|---|---|
 | 14-15/06/2026 | 0.1.0 | Scaffold stdio, HTTP stateless multi-utilisateur, outils lecture/écriture, pont OAuth, schémas de sortie |
 | 27/07/2026 | 0.1.0 | Login avec `plateform: "MCP"` |
+| 14/10/2026 | 0.3.0 | Routes back `/mcp/*` (nouveaux fichiers) + `list_searches`, `search_stats`, `find_buyers` robuste, graphies de villes, compteur d'acheteurs fiable |
 | 14/10/2026 | 0.2.0 | Refonte orientée métier : instructions, glossaire, résolution id/libellé, sorties `{id,label}`, filtres complets, recherches strictes, matching bidirectionnel, mises à jour par fusion, `whoami`, cartographie `docs/JOINTURES.md` |

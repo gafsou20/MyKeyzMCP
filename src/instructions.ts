@@ -23,6 +23,8 @@ BONNES PRATIQUES
 - « Mes contacts », « mon agenda » : le périmètre est celui de l'utilisateur connecté (whoami).
 - Avant de créer un contact, cherche s'il existe (list_contacts avec telephone ou texte) ; l'API refuse les doublons de téléphone.
 - Pour un acheteur : get_contact → recherches → find_matching_proprietes. Pour un bien : find_buyers.
+- Vue d'ensemble des recherches (« combien de recherches en cours sur Tel Aviv ? ») : search_stats ; détail : list_searches.
+- Photos / plans / brochures d'un bien ou projet : list_ged (type « Propriete » ou « Projet » + id).
 - Les mises à jour (update_*) ne modifient que les champs fournis.
 - Les suppressions sont irréversibles : demande confirmation à l'utilisateur.
 - Listes paginées : si page_suivante est présent, il y a d'autres résultats.

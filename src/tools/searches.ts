@@ -6,8 +6,12 @@ import * as ref from '../core/referentials.js';
 import * as present from '../domain/present.js';
 import { toApiData } from '../domain/criteria.js';
 import { ToolError } from '../core/errors.js';
+import * as mcpApi from '../api/mcp.js';
+import type { SearchWithContact } from '../api/mcp.js';
+import { dayToEpoch, epochToLocal } from '../core/dates.js';
+import { norm } from '../core/text.js';
 import { handler, page } from './run.js';
-import { criteriaShape, criteriaSchema, ref as refIn, type CriteriaInput } from './schemas.js';
+import { criteriaShape, criteriaSchema, day, ref as refIn, refs, type CriteriaInput } from './schemas.js';
 import type { ContactSearch, Propriete } from '../types/models.js';
 
 const CRITERIA_KEYS = Object.keys(criteriaShape) as (keyof CriteriaInput)[];
@@ -98,7 +102,7 @@ export function registerSearchTools(server: McpServer): void {
     handler(async (a) => {
       const s = await findSearch(a.contact_id, a.search_id);
       const res = await proprietesApi.listV2({
-        filters: proprieteFilters(s.data ?? {}, a),
+        filters: proprieteFilters(expandVilles(s.data ?? {}), a),
         sort: { key: 'date_update', value: 'DESC' },
         limit: a.limit,
         page: a.page,
@@ -125,34 +129,150 @@ export function registerSearchTools(server: McpServer): void {
       annotations: { readOnlyHint: true },
     },
     handler(async (a) => {
-      const d = await proprietesApi.get(a.propriete_id);
-      const active = ref.resolve('ContactSearchStatus', 'en_cours');
-      let searchs = d.searchs ?? [];
-      if (a.recherches_actives_seulement) searchs = searchs.filter((s) => s.status_id === active);
-      const shown = searchs.slice(0, a.limit);
-      const contacts = await Promise.all(
-        shown.map((s) =>
-          s.contact_id
-            ? contactsApi.get(s.contact_id).then((r) => r.contact).catch(() => null)
-            : Promise.resolve(null),
-        ),
-      );
+      const [d, res] = await Promise.all([
+        proprietesApi.get(a.propriete_id),
+        mcpApi.buyers(a.propriete_id, a.recherches_actives_seulement),
+      ]);
+      const list = Array.isArray(res) ? res : [];
       return {
         bien: present.propriete(d.propriete),
-        total: searchs.length,
-        acheteurs: shown.map((s, i) => ({
-          contact: contacts[i]
-            ? {
-                id: contacts[i]!.id,
-                nom: present.fullName(contacts[i]),
-                telephone: contacts[i]!.telephone || contacts[i]!.mobile || null,
-                statut: ref.pair('ContactStatus', contacts[i]!.status_id),
-                agent: present.agent(contacts[i]!.user_id),
-              }
-            : { id: s.contact_id, nom: null, note: 'hors périmètre de l’utilisateur' },
-          recherche: present.search(s),
-        })),
+        total: list.length,
+        acheteurs: list.slice(0, a.limit).map(withContact),
       };
     }),
   );
+
+  const listFilters = {
+    statut: refs('ContactSearchStatus', 'Défaut : « En cours ».').optional(),
+    villes: z.array(z.string()).optional().describe('Villes recherchées (ex. ["Tel Aviv"]).'),
+    quartiers: z.array(z.union([z.number().int(), z.string()])).optional(),
+    transaction: refs('ProprieteTransaction', '"Vente"/"achat" ou "Location".').optional(),
+    types_bien: refs('ProprieteBien').optional(),
+    agent: refs('User', 'Agent du contact.').optional(),
+    contact_id: z.number().int().optional(),
+    prix: z.number().optional().describe('Ne garder que les recherches dont le budget inclut ce prix (₪).'),
+    pieces: z.number().optional().describe('Ne garder que les recherches compatibles avec ce nombre de pièces.'),
+    cree_du: day.optional(),
+    cree_au: day.optional(),
+    inclure_indifferent: z
+      .boolean()
+      .default(true)
+      .describe('true = une recherche sans critère sur la ville/transaction/type compte aussi (elle accepte tout).'),
+  };
+
+  type ListFilterArgs = { [K in keyof typeof listFilters]?: unknown };
+
+  /** Filtres outil → filtres de /mcp/search/*. Villes : toutes les graphies connues. */
+  const toFilters = (a: ListFilterArgs): Record<string, unknown> => {
+    const f: Record<string, unknown> = {
+      status_id: ref.resolveMany('ContactSearchStatus', a.statut ?? 'en_cours'),
+      inclure_indifferent: a.inclure_indifferent !== false,
+    };
+    if (a.villes !== undefined) f.villes = villeVariants(a.villes as string[]);
+    if (a.quartiers !== undefined) f.quartier_id = ref.resolveMany('Quartier', a.quartiers);
+    if (a.transaction !== undefined) f.transaction_id = ref.resolveMany('ProprieteTransaction', a.transaction);
+    if (a.types_bien !== undefined) f.bien_id = ref.resolveMany('ProprieteBien', a.types_bien);
+    if (a.agent !== undefined) f.contact_user_id = ref.resolveMany('User', a.agent);
+    if (a.contact_id !== undefined) f.contact_id = a.contact_id;
+    if (a.prix !== undefined) f.prix = a.prix;
+    if (a.pieces !== undefined) f.pieces = a.pieces;
+    if (a.cree_du) f.min_date_create = dayToEpoch(a.cree_du as string);
+    if (a.cree_au) f.max_date_create = dayToEpoch(a.cree_au as string, true);
+    return f;
+  };
+
+  server.registerTool(
+    'list_searches',
+    {
+      title: 'Lister les recherches acheteur',
+      description:
+        "Recherches acheteur de TOUS les contacts du périmètre, filtrables par statut (défaut « En cours »), ville, quartier, transaction, type de bien, agent, budget compatible avec un prix, pièces, date. Chaque résultat inclut le contact (nom, téléphone, statut, agent). Pour un simple comptage, préfère search_stats.",
+      inputSchema: {
+        ...listFilters,
+        limit: z.number().int().min(1).max(100).default(25),
+        page: z.number().int().min(1).default(1),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    handler(async (a) => {
+      const res = await mcpApi.searchList({
+        filters: toFilters(a),
+        sort: { key: 'date_update', value: 'DESC' },
+        limit: a.limit,
+        page: a.page,
+      });
+      return { ...page(res, a.limit), recherches: res.data.map(withContact) };
+    }),
+  );
+
+  server.registerTool(
+    'search_stats',
+    {
+      title: 'Statistiques des recherches acheteur',
+      description:
+        "Compte les recherches acheteur (défaut : « En cours ») avec les mêmes filtres que list_searches, et donne la répartition par ville, type de transaction et statut. Ex. « combien de recherches en cours sur Tel Aviv ? ».",
+      inputSchema: listFilters,
+      annotations: { readOnlyHint: true },
+    },
+    handler(async (a) => {
+      const s = await mcpApi.searchStats(toFilters(a));
+      return {
+        total: s.total,
+        par_ville: (s.par_ville ?? []).map((x) => ({ ville: x._id, nb: x.n })),
+        par_transaction: (s.par_transaction ?? []).map((x) => ({
+          transaction: x._id ? ref.pair('ProprieteTransaction', x._id) : { id: null, label: 'Indifférent' },
+          nb: x.n,
+        })),
+        par_statut: (s.par_statut ?? []).map((x) => ({ statut: ref.pair('ContactSearchStatus', x._id), nb: x.n })),
+        ...(a.inclure_indifferent !== false && (a.villes || a.transaction || a.types_bien)
+          ? { note: 'Inclut les recherches sans critère sur ces champs (elles acceptent tout). inclure_indifferent=false pour les exclure.' }
+          : {}),
+      };
+    }),
+  );
+}
+
+/** Toutes les graphies connues d'une ville (ex. « Tel Aviv-Yafo », « Tel Aviv-Jaffa », « תל אביב-יפו »). */
+const VILLE_ALIASES: string[][] = [['Tel Aviv-Yafo', 'Tel Aviv-Jaffa', 'תל אביב-יפו', 'Tel Aviv', 'Tel-Aviv']];
+
+export function villeVariants(villes: string[]): string[] {
+  const out = new Set<string>();
+  for (const v of villes) {
+    let resolved: string;
+    try {
+      resolved = String(ref.resolve('Ville', v));
+    } catch {
+      resolved = v;
+    }
+    out.add(resolved);
+    for (const group of VILLE_ALIASES) {
+      if (group.some((g) => norm(g) === norm(resolved) || norm(g) === norm(v))) group.forEach((g) => out.add(g));
+    }
+  }
+  return [...out];
+}
+
+/** Étend le critère ville d'un `data` API à toutes les graphies connues (lecture seule). */
+export function expandVilles(data: Record<string, unknown>): Record<string, unknown> {
+  const v = data['adresse.locality'];
+  if (!Array.isArray(v) || !v.length) return data;
+  return { ...data, 'adresse.locality': villeVariants(v.map(String)) };
+}
+
+/** Recherche + contact embarqué (renvoyé par les routes /mcp du back). */
+function withContact(s: SearchWithContact) {
+  const c = s.contact;
+  return {
+    contact: c
+      ? {
+          id: c.id,
+          nom: present.fullName(c),
+          telephone: c.telephone || c.mobile || null,
+          statut: ref.pair('ContactStatus', c.status_id),
+          agent: present.agent(c.user_id),
+        }
+      : { id: s.contact_id },
+    recherche: present.search(s),
+    modifiee_le: epochToLocal(s.date_update),
+  };
 }

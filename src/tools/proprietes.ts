@@ -7,7 +7,8 @@ import { toApiData } from '../domain/criteria.js';
 import { escapeRegex } from '../core/text.js';
 import { ToolError } from '../core/errors.js';
 import { handler, page } from './run.js';
-import { proprieteFilters } from './searches.js';
+import { proprieteFilters, expandVilles } from './searches.js';
+import * as mcpApi from '../api/mcp.js';
 import {
   adresseSchema,
   criteriaShape,
@@ -146,7 +147,7 @@ export function registerProprieteTools(server: McpServer): void {
     handler(async (a) => {
       const c: Record<string, unknown> = {};
       for (const k of CRITERIA_KEYS) if ((a as Record<string, unknown>)[k] !== undefined) c[k] = (a as Record<string, unknown>)[k];
-      const f = proprieteFilters(toApiData(criteriaSchema.parse(c)), {
+      const f = proprieteFilters(expandVilles(toApiData(criteriaSchema.parse(c))), {
         inclure_annonces: a.inclure_annonces,
         disponibles_seulement: false,
       });
@@ -172,12 +173,15 @@ export function registerProprieteTools(server: McpServer): void {
     {
       title: 'Fiche bien complète',
       description:
-        "Fiche d'un bien : caractéristiques, jointures { id, label }, propriétaire, projet lié, RDV et nombre d'acheteurs potentiels (détail via find_buyers).",
+        "Fiche d'un bien : caractéristiques, jointures { id, label }, propriétaire, projet lié, RDV et nombre d'acheteurs potentiels actifs (détail via find_buyers). Photos/plans : list_ged.",
       inputSchema: { id: z.number().int().describe('Id du bien.') },
       annotations: { readOnlyHint: true },
     },
     handler(async ({ id }) => {
-      const d = await proprietesApi.get(id);
+      const [d, buyers] = await Promise.all([
+        proprietesApi.get(id),
+        mcpApi.buyers(id, true).catch(() => null),
+      ]);
       return {
         bien: present.proprieteDetail(d.propriete),
         proprietaire: d.contact
@@ -190,7 +194,7 @@ export function registerProprieteTools(server: McpServer): void {
             ? { id: d.propriete.contact_id, nom: null, note: 'hors périmètre de l’utilisateur' }
             : null,
         projet: d.projet ? present.projet(d.projet) : null,
-        acheteurs_potentiels: (d.searchs ?? []).length,
+        acheteurs_potentiels_actifs: Array.isArray(buyers) ? buyers.length : null,
         rdv: (d.agenda ?? []).map(present.event),
       };
     }),

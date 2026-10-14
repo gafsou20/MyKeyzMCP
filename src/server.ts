@@ -15,7 +15,7 @@ import { INSTRUCTIONS } from './instructions.js';
  * Utilisé par les deux transports (stdio et HTTP).
  */
 export function createServer(): McpServer {
-  const server = new McpServer({ name: 'mykeyz-mcp', version: '0.2.0' }, { instructions: INSTRUCTIONS });
+  const server = new McpServer({ name: 'mykeyz-mcp', version: '0.3.0' }, { instructions: INSTRUCTIONS });
   registerReferentialTools(server);
   registerContactTools(server);
   registerSearchTools(server);
