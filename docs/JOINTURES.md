@@ -67,7 +67,8 @@ Structure de `data` (formulaire `Recherche.vue`) :
 | `terrace`, `parking`, `jardin`, `toit`, `ascenseur`, `meuble`, `cave` | booléen / null | null = indifférent |
 
 - Tableau vide = « tous ».
-- ⚠️ Clés **anciennes** encore présentes en base : `ville`, `pieces_min`, `pieces_max`, `budget_max` (à ignorer ou migrer).
+- ⚠️ **Format strict** : seules les clés ci-dessus sont valides (défaut `ContactSearch::$data` côté back = formulaire `Recherche.vue` côté front = matching `Propriete::getSearchs()`). Toute autre clé est **ignorée silencieusement** → la recherche ne matche jamais.
+- Contre-exemple réel : recherche **#1533** (contact 2147, 27/07/2026) créée via le MCP avec `{ville, pieces_min, pieces_max, budget_max}` — clés inventées par l'agent car `create_search` acceptait un `data` libre. À corriger en prod. Les 1 530 autres recherches respectent le format.
 - **Matching** : contact → biens = `POST /propriete/listev2` avec `filters = search.data`. Bien → acheteurs = `Propriete::getSearchs()` (transaction, ville, type, option, prix…). Le filtre quartier est commenté côté back.
 
 ## 4. Bien (`propriete`)
@@ -97,17 +98,17 @@ Mêmes champs que le bien (`bien_id`, `transaction_id`, `status_id`…). `source
 
 | Champ | Référentiel | Remarque |
 |---|---|---|
-| `status_id` | **ProjetStatus** | 1 Pré-vente · 2 En commercialisation · 3 Livraison imminente… ⚠️ la collection `model` dit `ProprieteStatus` : **faux**, le front et les données utilisent ProjetStatus |
+| `status_id` | **ProjetStatus** | 1 Pré-vente · 2 En commercialisation · 3 Livraison imminente… ✅ validé. ⚠️ la collection `model` indique `ProprieteStatus` : **erreur**, ne pas la suivre |
 | `type_id` | **ProjetType** | tour_standing, immeuble_boutique, maison |
 | `pre_type_id` | **ProjetPreType** | habitation · commercial |
-| `permis` | **ProjetPermis** | 1 obtenu · 2 en cours ⚠️ certaines données en booléen |
+| `permis` | **ProjetPermis** | 1 obtenu · 2 en cours d'obtention. ✅ validé. Ancien format booléen (`true`/`false`) obsolète : à ignorer / considérer comme non renseigné |
 | `caracteristique_id[]` | **ProjetCaracteristique** | tableau |
 | livraison | **ProjetLivraison** | |
 | `user_id` | **User** | |
 | `contact_id` | → `contact.id` | promoteur (catégorie 4 ou 5) |
 | `adresse.quartier_id` | **Quartier** | |
 
-## 7. Transaction (`transaction`)
+## 7. Transaction (`transaction`) — ⏸️ hors périmètre pour l'instant
 
 | Champ | Référentiel | Remarque |
 |---|---|---|
@@ -158,8 +159,8 @@ Mêmes champs que le bien (`bien_id`, `transaction_id`, `status_id`…). `source
 
 ## 12. Incohérences relevées
 
-1. `model.Projet.status_id` pointe vers ProprieteStatus au lieu de ProjetStatus.
-2. `projet.permis` mélange id et booléen.
-3. `contact_search.data` mélange anciennes et nouvelles clés.
-4. `transaction.client.id` / `agents[].id` : id numérique ou UUID.
-5. `propriete.etage`, `superficie`, `parking_place` : nombre ou texte selon les fiches.
+1. ✅ `model.Projet.status_id` pointe vers ProprieteStatus → **la bonne jointure est ProjetStatus**.
+2. ✅ `projet.permis` : ancien booléen → **jointure ProjetPermis** désormais.
+3. ✅ `contact_search.data` : pas d'ancien format — une seule recherche (#1533) invalide, créée par le MCP (cf. §3).
+4. ⏸️ Transactions : hors périmètre pour l'instant.
+5. ✅ `propriete.etage`, `superficie`, `superficie_terrain`, `parking_place` : **nombres** ; certaines fiches les stockent en texte → convertir (`Number()`) à la lecture comme à l'écriture.
