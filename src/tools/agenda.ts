@@ -1,119 +1,149 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as agendaApi from '../api/agenda.js';
-import { defaultListQuery } from '../types/api.js';
 import * as ref from '../core/referentials.js';
-import { structured } from './respond.js';
-import { agendaEvent, agendaList, agendaSearch, genericResult } from './outputs.js';
+import * as present from '../domain/present.js';
+import { dayToUtcEpoch, today } from '../core/dates.js';
+import { ToolError } from '../core/errors.js';
+import { handler } from './run.js';
+import { day, ref as refIn, refs } from './schemas.js';
 import type { AgendaEvent } from '../types/models.js';
 
-function présenter(e: AgendaEvent) {
-  return {
-    id: e.id,
-    titre: e.data?.titre,
-    date: e.data?.date,
-    heure: e.data?.heure,
-    categorie: ref.label('AgendaCategorie', e.data?.categorie_id) || e.data?.categorie_id,
-    telephone: e.data?.telephone ?? null,
-    description: e.data?.description ?? null,
-    rattachement: e.model && e.model_id ? { type: e.model, id: e.model_id } : null,
-    agent: ref.label('User', e.user_id) || e.user_id,
-  };
-}
+const heure = z.string().regex(/^\d{2}:\d{2}$/, 'Format HH:MM');
+const rattachement = z
+  .object({ type: z.enum(['Contact', 'Propriete']), id: z.number().int() })
+  .describe('Fiche liée au RDV (contact ou bien).');
 
 export function registerAgendaTools(server: McpServer): void {
   server.registerTool(
     'list_agenda',
     {
+      title: 'Agenda de l’utilisateur',
       description:
-        "Liste les RDV/événements de l'agenda, triés par date. Ids résolus : catégorie←AgendaCategorie, agent←User. `rattachement` indique l'entité liée (Contact/Propriete).",
+        "RDV de l'agenda de l'utilisateur connecté, triés chronologiquement, filtrables par période (dates en heure d'Israël), catégorie et fiche rattachée. Par défaut : à partir d'aujourd'hui.",
       inputSchema: {
+        du: day.optional().describe("À partir du (YYYY-MM-DD). Défaut : aujourd'hui."),
+        au: day.optional().describe('Jusqu’au (YYYY-MM-DD, inclus).'),
+        categorie: refs('AgendaCategorie').optional(),
+        rattachement: rattachement.optional(),
         limit: z.number().int().min(1).max(200).default(50),
         page: z.number().int().min(1).default(1),
       },
-      outputSchema: agendaList,
       annotations: { readOnlyHint: true },
     },
-    async ({ limit, page }) => {
-      await ref.ensureLoaded();
-      const res = await agendaApi.list(
-        defaultListQuery({ sort: { key: 'dateO', value: 'ASC' }, limit, page }),
-      );
-      return structured({
-        total: res.totalRow,
-        page: res.currentPage,
-        count: res.data.length,
-        evenements: res.data.map(présenter),
-      });
-    },
+    handler(async (a) => {
+      const f: Record<string, unknown> = {};
+      f['min_data.time'] = dayToUtcEpoch(a.du ?? today());
+      if (a.au) f['max_data.time'] = dayToUtcEpoch(a.au);
+      if (a.categorie !== undefined) f['data.categorie_id'] = ref.resolveMany('AgendaCategorie', a.categorie);
+      if (a.rattachement) {
+        f.model = [a.rattachement.type];
+        f.model_id = [a.rattachement.id];
+      }
+      // L'API renvoie tout l'agenda filtré (pas de pagination serveur).
+      const res = await agendaApi.list({ filters: f, sort: { key: 'dateO', value: 'ASC' } });
+      const all = res.data ?? [];
+      const start = (a.page - 1) * a.limit;
+      const slice = all.slice(start, start + a.limit);
+      return {
+        total: all.length,
+        page: a.page,
+        count: slice.length,
+        ...(start + a.limit < all.length ? { page_suivante: a.page + 1 } : {}),
+        rdv: slice.map(present.event),
+      };
+    }),
   );
 
   server.registerTool(
     'search_agenda',
     {
-      description: "Recherche d'événements d'agenda par texte (titre).",
-      inputSchema: { query: z.string().min(1).describe('Texte recherché dans les événements.') },
-      outputSchema: agendaSearch,
+      title: 'Rechercher un RDV',
+      description: "Recherche texte dans les RDV de l'utilisateur (titre).",
+      inputSchema: { texte: z.string().min(1) },
       annotations: { readOnlyHint: true },
     },
-    async ({ query }) => {
-      await ref.ensureLoaded();
-      const res = await agendaApi.search(query);
-      return structured({ count: res.length, evenements: res.map(présenter) });
-    },
+    handler(async ({ texte }) => {
+      const res = await agendaApi.search(texte);
+      const list = Array.isArray(res) ? res : [];
+      return { count: list.length, rdv: list.map(present.event) };
+    }),
   );
-
-  // ── Écritures ──────────────────────────────────────────────────────────────
 
   server.registerTool(
     'create_event',
     {
+      title: 'Créer un RDV',
       description:
-        "Crée un RDV/événement (ou MAJ si `id`). `categorie_id` provient du référentiel AgendaCategorie → list_referentials('AgendaCategorie'). Rattachable à un Contact ou une Propriete via `model` + `model_id`.",
+        "Crée un RDV dans l'agenda de l'utilisateur connecté, éventuellement rattaché à un contact ou un bien (apparaît alors sur la fiche).",
       inputSchema: {
-        id: z.number().int().optional().describe('Présent = mise à jour.'),
-        titre: z.string().describe('Titre du RDV.'),
-        date: z.string().describe('Date au format YYYY-MM-DD.'),
-        heure: z.string().optional().describe('Heure au format HH:MM.'),
-        categorie_id: z.number().int().describe('Catégorie (référentiel AgendaCategorie).'),
+        titre: z.string().min(1),
+        date: day.describe('YYYY-MM-DD (heure d’Israël).'),
+        heure: heure.optional(),
+        categorie: refIn('AgendaCategorie', '"Client important" / "Relance client".'),
         description: z.string().nullable().optional(),
         telephone: z.string().nullable().optional(),
-        url: z.string().nullable().optional(),
-        model: z.enum(['Contact', 'Propriete']).optional().describe("Type d'entité rattachée."),
-        model_id: z.number().int().optional().describe("Id de l'entité rattachée."),
+        rattachement: rattachement.optional(),
       },
-      outputSchema: agendaEvent,
     },
-    async ({ id, titre, date, heure, categorie_id, description, telephone, url, model, model_id }) => {
-      await ref.ensureLoaded();
+    handler(async (a) => {
       const saved = await agendaApi.create({
-        ...(id ? { id } : {}),
-        ...(model && model_id ? { model, model_id } : {}),
+        ...(a.rattachement ? { model: a.rattachement.type, model_id: a.rattachement.id } : {}),
         data: {
-          titre,
-          date,
-          heure: heure ?? null,
-          categorie_id,
-          description: description ?? null,
-          telephone: telephone ?? null,
-          url: url ?? null,
+          titre: a.titre,
+          date: a.date,
+          heure: a.heure ?? '09:00',
+          categorie_id: ref.resolve('AgendaCategorie', a.categorie) as number,
+          description: a.description ?? null,
+          telephone: a.telephone ?? null,
+          url: null,
         },
       });
-      return structured(présenter(saved));
+      return { ok: true, rdv: present.event(saved) };
+    }),
+  );
+
+  server.registerTool(
+    'update_event',
+    {
+      title: 'Modifier un RDV',
+      description: 'Modifie un RDV (déplacer, renommer, changer de catégorie…) : seuls les champs fournis changent.',
+      inputSchema: {
+        id: z.number().int(),
+        titre: z.string().optional(),
+        date: day.optional(),
+        heure: heure.optional(),
+        categorie: refIn('AgendaCategorie').optional(),
+        description: z.string().nullable().optional(),
+        telephone: z.string().nullable().optional(),
+      },
     },
+    handler(async ({ id, categorie, ...a }) => {
+      const current: AgendaEvent = await agendaApi.get(id);
+      const data = { ...current.data };
+      for (const [k, v] of Object.entries(a)) if (v !== undefined) (data as Record<string, unknown>)[k] = v;
+      if (categorie !== undefined) data.categorie_id = ref.resolve('AgendaCategorie', categorie) as number;
+      if (JSON.stringify(data) === JSON.stringify(current.data)) throw new ToolError('Aucun champ à modifier.');
+      const saved = await agendaApi.create({
+        id,
+        ...(current.model ? { model: current.model, model_id: current.model_id } : {}),
+        data,
+      });
+      return { ok: true, rdv: present.event(saved) };
+    }),
   );
 
   server.registerTool(
     'delete_event',
     {
-      description: '⚠️ Supprime définitivement un événement/RDV (suppression dure, irréversible).',
-      inputSchema: { id: z.number().int().describe("Identifiant de l'événement à supprimer.") },
-      outputSchema: genericResult,
+      title: 'Supprimer un RDV',
+      description: '⚠️ Supprime définitivement un RDV (irréversible). Confirme avec l’utilisateur avant.',
+      inputSchema: { id: z.number().int() },
       annotations: { destructiveHint: true },
     },
-    async ({ id }) => {
-      const res = await agendaApi.remove(id);
-      return structured({ ok: true, message: typeof res === 'string' ? res : 'deleted', result: res });
-    },
+    handler(async ({ id }) => {
+      await agendaApi.remove(id);
+      return { ok: true, supprime: id };
+    }),
   );
 }

@@ -1,203 +1,225 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as contactsApi from '../api/contacts.js';
-import { defaultListQuery } from '../types/api.js';
 import * as ref from '../core/referentials.js';
-import { structured } from './respond.js';
-import {
-  contactItem,
-  contactList,
-  contactDetail,
-  commentOut,
-  searchOut,
-} from './outputs.js';
+import * as present from '../domain/present.js';
+import { dayToEpoch } from '../core/dates.js';
+import { escapeRegex } from '../core/text.js';
+import { ToolError } from '../core/errors.js';
+import { handler, page } from './run.js';
+import { ref as refIn, refs, day } from './schemas.js';
 import type { Contact } from '../types/models.js';
 
-/** Champs scalaires modifiables d'un contact (tous optionnels). */
-const contactFields = {
+/** Champs éditables d'un contact (entrée métier → champ API). */
+const editable = {
   prenom: z.string().nullable().optional(),
   nom: z.string().nullable().optional(),
-  socite: z.string().nullable().optional().describe('Société (orthographe API : socite).'),
-  telephone: z.string().nullable().optional(),
-  mobile: z.string().nullable().optional(),
+  societe: z.string().nullable().optional().describe('Société.'),
+  telephone: z.string().nullable().optional().describe('Téléphone principal, format international (+972…). Sert au contrôle de doublon.'),
+  mobile: z.string().nullable().optional().describe('Second téléphone.'),
   email: z.string().nullable().optional(),
-  budget: z.number().nullable().optional(),
+  budget: z.number().nullable().optional().describe('Budget (₪).'),
   important: z.boolean().optional(),
-  status_id: z.number().int().optional().describe('Statut (référentiel ContactStatus).'),
-  source_id: z.number().int().optional().describe('Source (référentiel ContactSource).'),
-  categorie_id: z.number().int().nullable().optional(),
-  langue_id: z.number().int().nullable().optional(),
-  user_id: z.number().int().optional().describe('Agent assigné (référentiel User).'),
-  commentaire: z.string().nullable().optional(),
+  statut: refIn('ContactStatus', 'Ex. "Nouveau lead", "NRP", "À rappeler", "En cours".').optional(),
+  categorie: refIn('ContactCategorie', 'client | prestataire | proprietaire (meshavek/promoteur réservés aux projets).').optional(),
+  categorie_option: refIn('ContactCategorieOption', 'Dépend de la catégorie (client → achat/location ; proprietaire → bien à vendre/à louer…).').nullable().optional(),
+  source: refIn('ContactSource', 'Ex. "Facebook", "YAD 2", "Site MyKeyz".').optional(),
+  langue: refIn('Langue', 'Français / Hébreu / Anglais.').nullable().optional(),
+  agent: refIn('User', 'Agent assigné : id ou nom.').optional(),
+  description: z.string().nullable().optional(),
 };
+type EditableInput = { [K in keyof typeof editable]?: z.infer<(typeof editable)[K]> };
 
-/** Projette un contact en objet compact et lisible (libellés résolus). */
-function présenter(c: Contact) {
-  return {
-    id: c.id,
-    nom: [c.prenom, c.nom, c.socite].filter(Boolean).join(' ').trim() || `#${c.id}`,
-    telephone: c.telephone,
-    mobile: c.mobile,
-    email: c.email,
-    statut: ref.label('ContactStatus', c.status_id) || c.status_id,
-    source: ref.label('ContactSource', c.source_id) || c.source_id,
-    agent: ref.label('User', c.user_id) || c.user_id,
-    important: c.important,
-    budget: c.budget,
-  };
+/** Entrée métier → payload API (seuls les champs fournis). */
+function toPayload(a: EditableInput, current?: Partial<Contact>): Partial<Contact> {
+  const p: Partial<Contact> = {};
+  if (a.prenom !== undefined) p.prenom = a.prenom;
+  if (a.nom !== undefined) p.nom = a.nom;
+  if (a.societe !== undefined) p.socite = a.societe;
+  if (a.telephone !== undefined) p.telephone = a.telephone;
+  if (a.mobile !== undefined) p.mobile = a.mobile;
+  if (a.email !== undefined) p.email = a.email;
+  if (a.budget !== undefined) p.budget = a.budget;
+  if (a.important !== undefined) p.important = a.important;
+  if (a.description !== undefined) p.description = a.description;
+  if (a.statut !== undefined) p.status_id = ref.resolve('ContactStatus', a.statut) as number;
+  if (a.source !== undefined) p.source_id = ref.resolve('ContactSource', a.source) as number;
+  if (a.langue !== undefined) p.langue_id = ref.resolveOpt('Langue', a.langue) as number | null;
+  if (a.agent !== undefined) p.user_id = ref.resolve('User', a.agent) as number;
+  if (a.categorie !== undefined) p.categorie_id = ref.resolve('ContactCategorie', a.categorie) as number;
+  const categorie = p.categorie_id ?? current?.categorie_id ?? null;
+  if (a.categorie_option !== undefined) {
+    p.categorie_option_id = ref.resolveOpt('ContactCategorieOption', a.categorie_option, categorie) as number | null;
+  } else if (p.categorie_id !== undefined && current?.categorie_option_id != null) {
+    // Catégorie changée : l'ancienne option n'est plus valide si elle dépend d'une autre catégorie.
+    const opt = ref.item('ContactCategorieOption', current.categorie_option_id);
+    if (opt && opt.categorie_id !== p.categorie_id) p.categorie_option_id = null;
+  }
+  return p;
+}
+
+/** Retire les champs techniques avant renvoi à l'API. */
+function clean(c: Record<string, unknown>): Record<string, unknown> {
+  const { _id, titre, ...rest } = c;
+  void _id;
+  void titre;
+  return rest;
+}
+
+/**
+ * Mise à jour sûre : l'API remplace les champs reçus et réécrit `old_user` à
+ * partir de la requête. On renvoie donc la fiche COMPLÈTE fusionnée, comme le
+ * fait le CRM, pour ne rien perdre (historique des agents notamment).
+ */
+async function mergeUpdate(id: number, a: EditableInput): Promise<Contact> {
+  const current = (await contactsApi.get(id)).contact;
+  const changes = toPayload(a, current);
+  return contactsApi.create({ ...(clean(current as unknown as Record<string, unknown>) as Partial<Contact>), ...changes, id });
 }
 
 export function registerContactTools(server: McpServer): void {
   server.registerTool(
     'list_contacts',
     {
+      title: 'Lister / filtrer les contacts',
       description:
-        "Liste les contacts du CRM MyKeyz (recherche texte + filtres). Dans les résultats, les ids de jointure sont DÉJÀ résolus en libellés : statut←ContactStatus, source←ContactSource, agent←User. (Réfs consultables via list_referentials.)",
+        "Recherche de contacts (prospects, clients, propriétaires, prestataires) avec filtres combinables. Les filtres de référentiel acceptent ids ou libellés (ex. statut: \"NRP\", agent: \"David\"). Chaque résultat renvoie les jointures en { id, label }. Périmètre : contacts des agents visibles par l'utilisateur.",
       inputSchema: {
-        search: z.string().optional().describe('Recherche texte (nom, téléphone, email…).'),
-        important: z.boolean().optional().describe('Ne garder que les contacts importants.'),
-        limit: z.number().int().min(1).max(100).default(25).describe('Nombre de résultats (max 100).'),
-        page: z.number().int().min(1).default(1).describe('Page (pagination).'),
+        texte: z.string().optional().describe('Nom, prénom ou société (contient).'),
+        telephone: z.string().optional().describe('Numéro (les 8 derniers chiffres suffisent).'),
+        statut: refs('ContactStatus').optional(),
+        categorie: refs('ContactCategorie').optional(),
+        source: refs('ContactSource').optional(),
+        agent: refs('User', 'Agent(s) assigné(s).').optional(),
+        important: z.boolean().optional(),
+        cree_du: day.optional().describe('Créé à partir du (YYYY-MM-DD).'),
+        cree_au: day.optional(),
+        modifie_du: day.optional().describe('Modifié à partir du (YYYY-MM-DD).'),
+        modifie_au: day.optional(),
+        tri: z.enum(['recent', 'modifie', 'ancien']).default('recent').describe('recent = derniers créés ; modifie = derniers modifiés.'),
+        limit: z.number().int().min(1).max(100).default(25),
+        page: z.number().int().min(1).default(1),
       },
-      outputSchema: contactList,
       annotations: { readOnlyHint: true },
     },
-    async ({ search, important, limit, page }) => {
-      await ref.ensureLoaded();
-      const filters: Record<string, unknown> = {};
-      if (search) filters.titre = search;
-      if (important !== undefined) filters.important = important;
-      const res = await contactsApi.list(defaultListQuery({ filters, limit, page }));
-      return structured({
-        total: res.totalRow,
-        page: res.currentPage,
-        count: res.data.length,
-        contacts: res.data.map(présenter),
-      });
-    },
+    handler(async (a) => {
+      const f: Record<string, unknown> = {};
+      if (a.texte) f.titre = escapeRegex(a.texte.trim());
+      if (a.telephone) {
+        const digits = a.telephone.replace(/\D/g, '');
+        f.telephone = digits.length >= 8 ? digits.slice(-8) : escapeRegex(a.telephone);
+      }
+      if (a.statut !== undefined) f.status_id = ref.resolveMany('ContactStatus', a.statut);
+      if (a.categorie !== undefined) f.categorie_id = ref.resolveMany('ContactCategorie', a.categorie);
+      if (a.source !== undefined) f.source_id = ref.resolveMany('ContactSource', a.source);
+      if (a.agent !== undefined) f.user_id = ref.resolveMany('User', a.agent);
+      if (a.important !== undefined) f.important = a.important;
+      if (a.cree_du) f.min_date_create = dayToEpoch(a.cree_du);
+      if (a.cree_au) f.max_date_create = dayToEpoch(a.cree_au, true);
+      if (a.modifie_du) f.min_date_update = dayToEpoch(a.modifie_du);
+      if (a.modifie_au) f.max_date_update = dayToEpoch(a.modifie_au, true);
+      const sort =
+        a.tri === 'modifie'
+          ? { key: 'date_update', value: 'DESC' as const }
+          : { key: 'id', value: a.tri === 'ancien' ? ('ASC' as const) : ('DESC' as const) };
+      const res = await contactsApi.list({ filters: f, sort, limit: a.limit, page: a.page });
+      return { ...page(res, a.limit), contacts: res.data.map(present.contact) };
+    }),
   );
 
   server.registerTool(
     'get_contact',
     {
+      title: 'Fiche contact complète',
       description:
-        "Fiche détaillée d'un contact : coordonnées, recherches, biens, projets, RDV et commentaires liés. Tous les ids sont résolus en libellés : statut←ContactStatus, source←ContactSource, catégorie←ContactCategorie, langue←Langue, agent/auteur←User.",
-      inputSchema: { id: z.number().int().describe('Identifiant du contact.') },
-      outputSchema: contactDetail,
+        "Fiche d'un contact avec TOUT son contexte : coordonnées, jointures { id, label }, recherches acheteur (critères + nb de biens correspondants), biens dont il est propriétaire, projets, RDV, notes (commentaires) et ancien historique texte.",
+      inputSchema: { id: z.number().int().describe('Id du contact.') },
       annotations: { readOnlyHint: true },
     },
-    async ({ id }) => {
-      await ref.ensureLoaded();
+    handler(async ({ id }) => {
       const d = await contactsApi.get(id);
-      return structured({
-        ...présenter(d.contact),
-        categorie: ref.label('ContactCategorie', d.contact.categorie_id) || null,
-        langue: ref.label('Langue', d.contact.langue_id) || null,
-        commentaire: d.contact.commentaire,
-        recherches: d.searchs?.length ?? 0,
-        biens_lies: d.proprietes?.length ?? 0,
-        projets_lies: d.projets?.length ?? 0,
-        rdv: (d.agenda ?? []).map((e) => ({ titre: e.data?.titre, date: e.data?.date, heure: e.data?.heure })),
-        commentaires: (d.commentaires ?? []).map((c) => ({
-          texte: c.txt,
-          auteur: ref.label('User', c.user_id) || c.user_id,
-          date: c.date_create,
-        })),
-      });
-    },
+      return {
+        contact: present.contactDetail(d.contact),
+        recherches: (d.searchs ?? []).map(present.search),
+        biens_proprietaire: (d.proprietes ?? []).map(present.propriete),
+        projets: (d.projets ?? []).map(present.projet),
+        rdv: (d.agenda ?? []).map(present.event),
+        notes: (d.commentaires ?? []).map(present.comment),
+      };
+    }),
   );
-
-  // ── Écritures ──────────────────────────────────────────────────────────────
 
   server.registerTool(
     'create_contact',
     {
+      title: 'Créer un contact',
       description:
-        "Crée un contact (ou le met à jour si `id` fourni). Les champs *_id pointent vers des référentiels : RÉSOUS-LES via list_referentials AVANT l'appel — status_id→ContactStatus, categorie_id→ContactCategorie (ces 2 sont OBLIGATOIRES), source_id→ContactSource, langue_id→Langue, user_id→User. ACL : création 13 / modification 14.",
-      inputSchema: {
-        id: z.number().int().optional().describe('Présent = mise à jour ; absent = création.'),
-        ...contactFields,
-        status_id: z.number().int().describe('Statut (OBLIGATOIRE) — référentiel ContactStatus.'),
-        categorie_id: z.number().int().describe('Catégorie (OBLIGATOIRE) — référentiel ContactCategorie.'),
-      },
-      outputSchema: contactItem,
+        "Crée un contact. `categorie` obligatoire ; `statut` = « Nouveau lead » et `source` = « Creation » par défaut. Les référentiels acceptent ids ou libellés. L'API refuse les doublons de téléphone et renvoie l'id existant : dans ce cas utilise get_contact / update_contact. ACL 13.",
+      inputSchema: { ...editable, categorie: refIn('ContactCategorie', 'client | prestataire | proprietaire.') },
     },
-    async (args) => {
-      await ref.ensureLoaded();
-      const saved = await contactsApi.create(args as Partial<Contact> & { id?: number });
-      return structured(présenter(saved));
+    handler(async (a) => {
+      const payload = toPayload({
+        ...a,
+        statut: a.statut ?? 'nouveau_lead',
+        source: a.source ?? 'Creation',
+      });
+      const wantedAgent = payload.user_id;
+      delete payload.user_id; // l'API assigne d'office le créateur
+      let saved = await contactsApi.create(payload);
+      if (wantedAgent !== undefined && wantedAgent !== saved.user_id) {
+        saved = await mergeUpdate(saved.id, { agent: wantedAgent });
+      }
+      return { ok: true, contact: present.contactDetail(saved) };
+    }),
+  );
+
+  server.registerTool(
+    'update_contact',
+    {
+      title: 'Modifier un contact',
+      description:
+        "Modifie un contact : seuls les champs fournis changent (fusion avec la fiche existante, l'historique des agents est conservé). Changer `agent` réassigne le contact. ACL 14 (statut 15, agent 16).",
+      inputSchema: { id: z.number().int().describe('Id du contact.'), ...editable },
     },
+    handler(async ({ id, ...a }) => {
+      if (!Object.values(a).some((v) => v !== undefined)) throw new ToolError('Aucun champ à modifier.');
+      const saved = await mergeUpdate(id, a);
+      return { ok: true, contact: present.contactDetail(saved) };
+    }),
   );
 
   server.registerTool(
     'set_contact_status',
     {
-      description:
-        "Change le statut d'un contact. `status_id` provient du référentiel ContactStatus → list_referentials('ContactStatus'). ACL 15.",
+      title: 'Changer le statut d’un contact',
+      description: 'Raccourci : change le statut (ex. "NRP", "À rappeler", "Client MyKeyz"). Ajoute éventuellement une note expliquant le changement. ACL 15.',
       inputSchema: {
-        id: z.number().int().describe('Identifiant du contact.'),
-        status_id: z.number().int().describe('Nouveau statut (référentiel ContactStatus).'),
+        id: z.number().int().describe('Id du contact.'),
+        statut: refIn('ContactStatus'),
+        note: z.string().optional().describe('Note ajoutée au contact (ex. résultat de l’appel).'),
       },
-      outputSchema: contactItem,
     },
-    async ({ id, status_id }) => {
-      await ref.ensureLoaded();
-      const saved = await contactsApi.create({ id, status_id });
-      return structured(présenter(saved));
-    },
+    handler(async ({ id, statut, note }) => {
+      const saved = await mergeUpdate(id, { statut });
+      if (note) await contactsApi.addComment(id, note);
+      return { ok: true, contact: present.contact(saved), note_ajoutee: Boolean(note) };
+    }),
   );
 
   server.registerTool(
-    'set_contact_agent',
+    'add_contact_note',
     {
-      description:
-        "Réassigne l'agent d'un contact. `user_id` provient du référentiel User → list_referentials('User'). ACL 16.",
+      title: 'Ajouter une note',
+      description: "Ajoute une note datée sur un contact (compte-rendu d'appel, info client…), signée par l'utilisateur connecté. `note_id` = modifier une note existante.",
       inputSchema: {
-        id: z.number().int().describe('Identifiant du contact.'),
-        user_id: z.number().int().describe('Nouvel agent (référentiel User).'),
+        contact_id: z.number().int(),
+        texte: z.string().min(1),
+        note_id: z.number().int().optional(),
       },
-      outputSchema: contactItem,
     },
-    async ({ id, user_id }) => {
-      await ref.ensureLoaded();
-      const saved = await contactsApi.create({ id, user_id });
-      return structured(présenter(saved));
-    },
-  );
-
-  server.registerTool(
-    'add_contact_comment',
-    {
-      description: 'Ajoute une note/commentaire sur un contact (ou met à jour une note via `id`).',
-      inputSchema: {
-        contact_id: z.number().int().describe('Identifiant du contact.'),
-        txt: z.string().min(1).describe('Texte de la note.'),
-        id: z.number().int().optional().describe('Présent = édition de la note.'),
-      },
-      outputSchema: commentOut,
-    },
-    async ({ contact_id, txt, id }) => {
-      const saved = await contactsApi.addComment(contact_id, txt, id);
-      return structured({ ok: true, comment: saved });
-    },
-  );
-
-  server.registerTool(
-    'create_search',
-    {
-      description:
-        "Crée/MAJ une recherche acheteur (critères) rattachée à un contact. `status_id` provient d'un référentiel (list_referentials). `data` = critères libres (budget, localité, nb pièces…).",
-      inputSchema: {
-        contact_id: z.number().int().describe('Contact propriétaire de la recherche.'),
-        status_id: z.number().int().describe('Statut de la recherche (référentiel).'),
-        data: z.record(z.unknown()).describe('Critères de recherche (objet libre).'),
-        id: z.number().int().optional().describe('Présent = mise à jour.'),
-      },
-      outputSchema: searchOut,
-    },
-    async ({ contact_id, status_id, data, id }) => {
-      const saved = await contactsApi.createSearch({ ...(id ? { id } : {}), contact_id, status_id, data });
-      return structured({ ok: true, searches: saved });
-    },
+    handler(async ({ contact_id, texte, note_id }) => {
+      const saved = await contactsApi.addComment(contact_id, texte, note_id);
+      return { ok: true, note: present.comment(saved) };
+    }),
   );
 }

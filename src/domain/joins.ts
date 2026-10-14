@@ -1,0 +1,35 @@
+/**
+ * Où chaque référentiel est utilisé (champ API → référentiel), d'après
+ * docs/JOINTURES.md (source : CRMMyKeyzV2). Le back ne fait aucune jointure.
+ */
+export const USED_BY: Record<string, string[]> = {
+  ContactStatus: ['contact.status_id'],
+  ContactCategorie: ['contact.categorie_id'],
+  ContactCategorieOption: ['contact.categorie_option_id (dépend de categorie_id)'],
+  ContactSource: ['contact.source_id', 'propriete.source_id'],
+  Langue: ['contact.langue_id'],
+  User: ['contact.user_id', 'propriete.user_id', 'projet.user_id', 'agenda.user_id'],
+  ContactCommentaireAgent: ['contact_commentaire.user_id', 'contact.old_user[]'],
+  ContactSearchStatus: ['contact_search.status_id'],
+  Ville: ['propriete.adresse.locality', 'contact_search.data["adresse.locality"][]'],
+  Quartier: ['propriete.adresse.quartier_id', 'projet.adresse.quartier_id', 'contact_search.data["adresse.quartier_id"][]'],
+  ProprieteTransaction: ['propriete.transaction_id', 'contact_search.data.transaction_id[]'],
+  ProprieteBien: ['propriete.bien_id', 'contact_search.data.bien_id[]'],
+  ProprieteBienOption: ['propriete.bien_option_id (dépend de bien_id)', 'contact_search.data.bien_option_id[]'],
+  ProprieteEtat: ['propriete.etat_id'],
+  ProprieteStatus: ['propriete.status_id'],
+  ProprieteColor: ['propriete.color_id (calculé par l’API)'],
+  ScraperSource: ['propriete.origine_id (annonces scrapées)'],
+  AgendaCategorie: ['agenda.data.categorie_id'],
+  GedType: ['ged.type_id'],
+  ProjetStatus: ['projet.status_id'],
+  ProjetType: ['projet.type_id'],
+  ProjetPreType: ['projet.pre_type_id'],
+  ProjetPermis: ['projet.permis'],
+  ProjetCaracteristique: ['projet.caracteristique_id[]'],
+  UserRole: ['user.role_id'],
+  UserStatus: ['user.status_id'],
+  Env: ['*.env_id', 'user.current_env'],
+  TransactionType: ['transaction.type_id'],
+  TransactionQuoteType: ['transaction_quote.type_id'],
+};
