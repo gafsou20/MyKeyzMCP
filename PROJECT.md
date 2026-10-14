@@ -20,6 +20,32 @@ Il ne possède **aucune donnée** ni base : c'est une couche de traduction au-de
 | Base | MongoDB `mykeyz-v2` (copie locale Mongo 27020) | Données réelles — analyse uniquement |
 | MCP | `/root/MyKeyzMCP` — github.com/gafsou20/MyKeyzMCP · `main` | Ce projet |
 
+### Relations entre les briques
+
+```
+  CRMMyKeyzV2 (front web)          MyKeyzMCP (ce projet)
+  /root/CRMMyKeyzV2                /root/MyKeyzMCP
+  Vue 2 · utilisé par les agents   Node/TS · utilisé par l'agent IA
+            │  HTTP + token               │  HTTP + token (plateform "MCP")
+            └──────────────┬──────────────┘
+                           ▼
+            API PHP  https://api.mykeyz.jg.app
+            miroir FTP local : /root/mykeyz-backend
+            (routes/*.php → controllers/*.php → models/*.php)
+                           │  connexion "mongo"
+                           ▼
+            MongoDB  base `mykeyz-v2`
+            (prod sur l'hébergement du back ;
+             copie locale sur ce serveur : Mongo Docker 27020, base `mykeyz-v2`)
+```
+
+- **CRMMyKeyzV2 et MyKeyzMCP sont deux clients du MÊME back** : mêmes routes, même authentification (`POST /authorization/create` → token dans `Authorization`), mêmes droits. Le front envoie `plateform` absent (= Web, session 24 h), le MCP envoie `plateform: "MCP"` (session 60 j) ; les deux sessions coexistent.
+- **Ni le front ni le MCP n'accèdent à MongoDB directement** : tout passe par l'API. La base locale `mykeyz-v2` ne sert qu'à l'analyse et aux tests (émulation des requêtes).
+- **Le back est la seule source des données ; le front est la seule source des jointures** : les correspondances champ → référentiel (`contact.status_id` → `Param[ContactStatus]`) ne sont écrites que dans CRMMyKeyzV2 (`$api.p(...)`, `$api.params.X`) et la collection `model`. Le MCP les a reprises dans `docs/JOINTURES.md` et `src/domain/`.
+- **Routes du back propres au MCP** : `routes/mcp.php` + `controllers/McpController.php` (§7 bis), lecture seule, non utilisées par le front.
+- Correspondance des noms : dossier back `/root/mykeyz-backend` = API `api.mykeyz.jg.app` = connexion Phalcon `mongo` = base **`mykeyz-v2`** (la connexion `old` pointe une ancienne base `mykeyz`, inutilisée ; `pbx` = PostgreSQL téléphonie, inutilisée par les contrôleurs actuels).
+- ⚠️ `/root/MyKeyzCRM` (Ionic Vue 3) et `/root/MyKeyzCRM-api-src` (ancienne copie du back, juin 2026) **ne font pas partie de l'écosystème actif** : ne pas s'y fier.
+
 Multi-marque : `env_id` 1 = MyKeyz, 2 = SelecSion. Le back filtre sur le `current_env` de l'utilisateur ; **le MCP ne gère pas l'env** (décision du 14/10/2026).
 
 ## 3. Stack & commandes
