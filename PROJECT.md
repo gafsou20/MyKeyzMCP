@@ -144,9 +144,9 @@ Nouveaux fichiers, lecture seule, sans impact sur l'existant : `routes/mcp.php` 
 
 ## 9. Tests
 
-Pas de suite automatisée. Méthode utilisée pour la v0.2.0 :
+Pas de suite automatisée. Méthode utilisée (v0.2.0 et v0.3.0) :
 - fixture `/param/all` reconstituée depuis la base locale `mykeyz-v2` → tests de résolution et de conversion des critères ;
-- émulation de `DataQuery::setFilters` directement sur Mongo pour valider la sémantique des filtres ;
+- émulation de `DataQuery::setFilters`, de `Propriete::getSearchs()` et des pipelines de `McpController` directement sur Mongo (ex. 221 recherches en cours sur Tel Aviv ; ADL-2223 → 11 acheteurs, MKV-2214 → 24) ;
 - fausse API Express (fixtures de la base locale) + client MCP HTTP pour valider les outils de bout en bout.
 
 Non validé contre la vraie API : écritures réelles (faute de compte de test).
@@ -159,7 +159,9 @@ Non validé contre la vraie API : écritures réelles (faute de compte de test).
 
 ## 11. Reste à faire
 
-- Déployer la v0.2.0 et activer l'OAuth.
+- Déployer la v0.3.0 (Jessy) et activer l'OAuth (`OAUTH_JWT_SECRET` + `PUBLIC_URL`).
+- Actualiser / reconnecter le connecteur dans ChatGPT après déploiement (cache des schémas d'outils).
+- Valider les routes `/mcp/*` du back avec un vrai token (testées seulement via émulation Mongo).
 - Tester les écritures contre la vraie API avec un compte de test.
 - Corriger la recherche #1533 en prod (casse le matching bien → acheteurs du CRM).
 - Retravailler les transactions (quand ce sera dans le périmètre).
@@ -172,5 +174,5 @@ Non validé contre la vraie API : écritures réelles (faute de compte de test).
 |---|---|---|
 | 14-15/06/2026 | 0.1.0 | Scaffold stdio, HTTP stateless multi-utilisateur, outils lecture/écriture, pont OAuth, schémas de sortie |
 | 27/07/2026 | 0.1.0 | Login avec `plateform: "MCP"` |
-| 14/10/2026 | 0.3.0 | Routes back `/mcp/*` (nouveaux fichiers) + `list_searches`, `search_stats`, `find_buyers` robuste, graphies de villes, compteur d'acheteurs fiable |
 | 14/10/2026 | 0.2.0 | Refonte orientée métier : instructions, glossaire, résolution id/libellé, sorties `{id,label}`, filtres complets, recherches strictes, matching bidirectionnel, mises à jour par fusion, `whoami`, cartographie `docs/JOINTURES.md` |
+| 14/10/2026 | 0.3.0 | Routes back `/mcp/*` (nouveaux fichiers) + `list_searches`, `search_stats`, `find_buyers` robuste, graphies de villes, compteur d'acheteurs fiable |
