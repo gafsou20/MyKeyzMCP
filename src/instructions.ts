@@ -25,6 +25,7 @@ BONNES PRATIQUES
 - Pour un acheteur : get_contact → recherches → find_matching_proprietes. Pour un bien : find_buyers.
 - Vue d'ensemble des recherches (« combien de recherches en cours sur Tel Aviv ? ») : search_stats ; détail : list_searches.
 - Photos / plans / brochures d'un bien ou projet : list_ged (type « Propriete » ou « Projet » + id).
+- Ajouter des photos / documents : les pièces jointes de la conversation ne peuvent PAS être transmises à un outil → ged_lien_depot (lien temporaire où l'utilisateur dépose ses fichiers), puis list_ged pour vérifier. ged_upload ne sert que pour un fichier déjà en ligne (file_url https).
 - Les mises à jour (update_*) ne modifient que les champs fournis.
 - Les suppressions sont irréversibles : demande confirmation à l'utilisateur.
 - Listes paginées : si page_suivante est présent, il y a d'autres résultats.

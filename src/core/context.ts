@@ -3,6 +3,8 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 export interface RequestContext {
   /** Token MyKeyz porté par la requête courante. */
   token: string | null;
+  /** URL publique du serveur vue par l'appelant (liens de dépôt de fichiers). */
+  baseUrl?: string;
 }
 
 /**
@@ -23,8 +25,13 @@ export function setDefaultToken(token: string | null): void {
 }
 
 /** Exécute `fn` avec un token de requête isolé. */
-export function runWithToken<T>(token: string | null, fn: () => T): T {
-  return requestContext.run({ token }, fn);
+export function runWithToken<T>(token: string | null, fn: () => T, baseUrl?: string): T {
+  return requestContext.run({ token, baseUrl }, fn);
+}
+
+/** URL publique du serveur pour la requête courante (null en stdio). */
+export function currentBaseUrl(): string | null {
+  return requestContext.getStore()?.baseUrl ?? null;
 }
 
 /** Token courant : contexte de requête, sinon token par défaut (stdio), sinon null. */

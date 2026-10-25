@@ -5,6 +5,8 @@ import { createServer } from './server.js';
 import { runWithToken } from './core/context.js';
 import { oauthRouter, resolveBearer, baseUrl } from './auth/oauth.js';
 import { OAUTH_ENABLED } from './auth/crypto.js';
+import { depotRouter } from './depot.js';
+import { DEPOT_KEY_EPHEMERAL } from './core/depot.js';
 
 // Port/host. Derrière Plesk Passenger, PORT peut être un chemin de socket Unix
 // (donc on ne force PAS Number). En pm2 + reverse-proxy, on fixe PORT + HOST.
@@ -12,6 +14,8 @@ const PORT: string | number = process.env.PORT ?? 8787;
 const HOST = process.env.HOST; // ex. 127.0.0.1 (bind local derrière proxy)
 
 const app = express();
+// Page de dépôt de fichiers (GED) : avant le parseur global, elle a sa propre limite (30 Mo).
+app.use(depotRouter);
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -52,7 +56,7 @@ app.post('/mcp', async (req, res) => {
     });
     await server.connect(transport);
     await transport.handleRequest(req, res, req.body);
-  });
+  }, baseUrl(req));
 });
 
 // En stateless, GET/DELETE (flux SSE long, sessions) ne sont pas utilisés.
@@ -67,7 +71,8 @@ app.delete('/mcp', methodNotAllowed);
 
 const ready = () =>
   console.error(
-    `[mykeyz-mcp] HTTP prêt sur ${HOST ?? '*'}:${PORT} (POST /mcp) — OAuth: ${OAUTH_ENABLED ? 'on' : 'off'}.`,
+    `[mykeyz-mcp] HTTP prêt sur ${HOST ?? '*'}:${PORT} (POST /mcp) — OAuth: ${OAUTH_ENABLED ? 'on' : 'off'}`
+      + (DEPOT_KEY_EPHEMERAL ? ' — ⚠️ DEPOT_SECRET absent : liens de dépôt perdus au redémarrage.' : '.'),
   );
 if (HOST) {
   app.listen(Number(PORT), HOST, ready);

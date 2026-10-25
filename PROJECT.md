@@ -1,7 +1,7 @@
 # MyKeyzMCP — PROJECT.md
 
 > Document de référence **autonome** du serveur MCP MyKeyz.
-> Dernière mise à jour : 14/10/2026 (v0.3.0).
+> Dernière mise à jour : 25/10/2026 (v0.4.0 — ajout de photos / documents).
 
 ---
 
@@ -116,7 +116,7 @@ Le MCP les applique :
 
 Validations de Jessy (14/10/2026) : statut de projet = **ProjetStatus** (la collection `model` qui dit ProprieteStatus est fausse) ; `projet.permis` = **ProjetPermis** (ancien booléen obsolète) ; `etage`/`superficie`/`parking_place` = nombres.
 
-## 6. Outils (34)
+## 6. Outils (35)
 
 | Domaine | Outils |
 |---|---|
@@ -126,9 +126,33 @@ Validations de Jessy (14/10/2026) : statut de projet = **ProjetStatus** (la coll
 | Biens | `list_proprietes` (mêmes critères qu'une recherche + référence, statut, agent, annonces scrapées), `get_propriete`, `create_propriete`, `update_propriete` |
 | Agenda | `list_agenda` (période, catégorie, fiche liée), `search_agenda`, `create_event`, `update_event`, `delete_event` |
 | Projets | `list_projets`, `get_projet` (+ lots), `create_projet`, `update_projet` |
-| GED | `list_ged`, `ged_upload`, `ged_delete` |
+| GED | `list_ged`, `ged_lien_depot` (lien temporaire de dépôt — § 6 bis), `ged_upload` (`file_url` https ou base64), `ged_delete` |
 | IA | `generate_seo` |
 | Transactions | `list_transactions`, `get_transaction`, `create_transaction` — **hors périmètre, non retravaillés** (ancien format de sortie) |
+
+## 6 bis. Ajout de photos / documents (v0.4.0, 25/10/2026)
+
+**Constat (Jessy)** : impossible d'ajouter des photos depuis le chat. Deux causes :
+1. **Conception** : `ged_upload` attendait le fichier **en base64 dans un paramètre**. Or un client MCP (claude.ai, ChatGPT)
+   ne donne pas à l'IA les octets d'une pièce jointe, et une photo de 3 Mo ferait ~4 millions de caractères : l'upload
+   depuis une conversation était impossible quel que soit le client.
+2. **Bug** : `GedController::base64ToFile` (back) garde `explode(',', …)[1]` → du base64 **brut** (sans `data:…;base64,`)
+   écrivait un **fichier vide**, avec fiche GED créée et réponse « succès ». Le CRM n'est pas touché (il envoie une data URL).
+
+**Solution (MCP seul, back inchangé)** :
+- `core/files.ts` : `toDataUrl()` — tout contenu part au back en data URL (type MIME par l'extension), base64 validé,
+  20 Mo max ; `fetchAsDataUrl()` — téléchargement **https uniquement**, IP privées / locales refusées (SSRF), pas de
+  redirection, 30 s, 20 Mo.
+- `ged_upload` : `file_url` (le MCP télécharge) **ou** `file` (base64 / data URL, `file_name` obligatoire).
+- **`ged_lien_depot`** : renvoie `…/depot/<jeton>` valable **30 min**. Jeton = JWE (A256GCM) contenant le **token MyKeyz
+  chiffré**, la fiche (Propriete / Projet + id) et le type GED → opaque, infalsifiable, limité à une fiche. Page
+  `src/depot.ts` (mobile d'abord, plusieurs fichiers, glisser-déposer, statut par fichier ; photos JPEG / PNG / WebP
+  > 2560 px ou > 4 Mo réduites dans le navigateur en JPEG 85 %) ; `POST /depot/<jeton>` → `/ged/upload` avec le token
+  de l'utilisateur. En-têtes `no-referrer`, `noindex`, `no-store`. Routeur monté **avant** le `express.json` global (5 Mo).
+- Clé des jetons : `DEPOT_SECRET`, sinon `OAUTH_JWT_SECRET`, sinon **aléatoire par processus** (jamais la clé de repli
+  connue de `crypto.ts`, le lien transportant un token d'accès). URL publique : `PUBLIC_URL`, sinon en-têtes
+  `X-Forwarded-*` (passés aux outils via `RequestContext.baseUrl`).
+- Instructions de l'agent : pièces jointes → `ged_lien_depot`, puis `list_ged` pour vérifier.
 
 ## 7. Correspondances API utiles
 
@@ -167,6 +191,10 @@ Nouveaux fichiers, lecture seule, sans impact sur l'existant : `routes/mcp.php` 
 7. **`_id` Mongo** renvoyé sous forme `{ $oid }` → aplati par `core/normalize.ts` et retiré avant renvoi à l'API.
 8. **Agenda** : `env_id` non posé par l'API à la création (comportement back, sans impact).
 9. Le cache des référentiels dure 10 min : une valeur ajoutée dans le CRM peut mettre ce délai à apparaître.
+11. **Fichiers** : une pièce jointe de la conversation n'est jamais transmissible à un outil MCP → lien de dépôt. Le back
+    n'accepte qu'une **data URL** (base64 brut = fichier vide enregistré sans erreur) : toujours passer par `toDataUrl()`.
+12. **Liens de dépôt sans `DEPOT_SECRET`** : clé propre à chaque processus → si Plesk / Passenger lance plusieurs processus
+    ou redémarre, un lien peut répondre « expiré ». Définir `DEPOT_SECRET` en prod.
 
 ## 9. Tests
 
@@ -174,6 +202,9 @@ Pas de suite automatisée. Méthode utilisée (v0.2.0 et v0.3.0) :
 - fixture `/param/all` reconstituée depuis la base locale `mykeyz-v2` → tests de résolution et de conversion des critères ;
 - émulation de `DataQuery::setFilters`, de `Propriete::getSearchs()` et des pipelines de `McpController` directement sur Mongo (ex. 221 recherches en cours sur Tel Aviv ; ADL-2223 → 11 acheteurs, MKV-2214 → 24) ;
 - fausse API Express (fixtures de la base locale) + client MCP HTTP pour valider les outils de bout en bout.
+- v0.4.0 (25/10/2026) : fausse API + client MCP + Playwright — base64 brut → data URL, data URL, base64 invalide refusé,
+  `file_url` https OK, IP privée et http refusés, lien de dépôt → page → 2 fichiers (PNG + PDF) envoyés avec la bonne
+  fiche, le bon type et le token de l'utilisateur, jeton altéré → 410.
 
 Non validé contre la vraie API : écritures réelles (faute de compte de test).
 
@@ -182,10 +213,13 @@ Non validé contre la vraie API : écritures réelles (faute de compte de test).
 - Déployé par **Jessy** sur son Plesk : https://mcp.mykeyz.jg.app (`/health`).
 - Prod : `npm install --include=dev && npm run build` puis `node dist/http.js` (Passenger ou pm2 + reverse proxy avec `HOST=127.0.0.1`).
 - ⚠️ Au 14/10/2026 : `/health` → `oauth:false` — renseigner `OAUTH_JWT_SECRET` (et `PUBLIC_URL`) pour activer le connecteur claude.ai.
+- v0.4.0 : ajouter **`DEPOT_SECRET`** (chaîne aléatoire longue) et idéalement **`PUBLIC_URL=https://mcp.mykeyz.jg.app`**.
+  Vérifier que le proxy Plesk accepte des requêtes de ~30 Mo sur `/depot/*` (photos), sinon les gros fichiers échouent.
 
 ## 11. Reste à faire
 
-- Déployer la v0.3.0 (Jessy) et activer l'OAuth (`OAUTH_JWT_SECRET` + `PUBLIC_URL`).
+- Déployer la v0.4.0 (Jessy) avec `DEPOT_SECRET` + `PUBLIC_URL`, et activer l'OAuth (`OAUTH_JWT_SECRET`).
+- Tester le lien de dépôt contre la vraie API (1 photo sur un bien de test), et la taille max acceptée par le back PHP (`post_max_size`).
 - Actualiser / reconnecter le connecteur dans ChatGPT après déploiement (cache des schémas d'outils).
 - Valider les routes `/mcp/*` du back avec un vrai token (testées seulement via émulation Mongo).
 - Tester les écritures contre la vraie API avec un compte de test.
@@ -202,3 +236,4 @@ Non validé contre la vraie API : écritures réelles (faute de compte de test).
 | 27/07/2026 | 0.1.0 | Login avec `plateform: "MCP"` |
 | 14/10/2026 | 0.2.0 | Refonte orientée métier : instructions, glossaire, résolution id/libellé, sorties `{id,label}`, filtres complets, recherches strictes, matching bidirectionnel, mises à jour par fusion, `whoami`, cartographie `docs/JOINTURES.md` |
 | 14/10/2026 | 0.3.0 | Routes back `/mcp/*` (nouveaux fichiers) + `list_searches`, `search_stats`, `find_buyers` robuste, graphies de villes, compteur d'acheteurs fiable |
+| 25/10/2026 | 0.4.0 | Ajout de photos / documents : `ged_lien_depot` (page de dépôt temporaire), `ged_upload` par `file_url`, data URL forcée (corrige les fichiers vides du base64 brut) |
