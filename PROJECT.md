@@ -237,3 +237,20 @@ Non validé contre la vraie API : écritures réelles (faute de compte de test).
 | 14/10/2026 | 0.2.0 | Refonte orientée métier : instructions, glossaire, résolution id/libellé, sorties `{id,label}`, filtres complets, recherches strictes, matching bidirectionnel, mises à jour par fusion, `whoami`, cartographie `docs/JOINTURES.md` |
 | 14/10/2026 | 0.3.0 | Routes back `/mcp/*` (nouveaux fichiers) + `list_searches`, `search_stats`, `find_buyers` robuste, graphies de villes, compteur d'acheteurs fiable |
 | 25/10/2026 | 0.4.0 | Ajout de photos / documents : `ged_lien_depot` (page de dépôt temporaire), `ged_upload` par `file_url`, data URL forcée (corrige les fichiers vides du base64 brut) |
+
+---
+
+## Fiche synthèse (reprise de PROJECTS.md, 27/10/2026)
+
+> Résumé qui figurait dans l'inventaire des projets d'Alfred, recopié ici pour ne rien perdre. En cas d'écart avec le reste de ce document, c'est le reste du document qui fait foi.
+
+| Champ | Valeur |
+|---|---|
+| **Description** | Serveur **MCP** du CRM MyKeyz (agence immo Tel Aviv / Ramat Gan) : donne à Claude l'accès aux contacts, recherches acheteur, biens, agenda, projets, GED. **Fait les jointures objets ↔ Param** que le back ne fait pas (entrée id OU libellé, sortie `{id,label}`), matching contact ⇄ biens dans les deux sens. |
+| **Stack** | Node 20 + TS strict + `@modelcontextprotocol/sdk` 1.29 + Express + Zod · OAuth 2.1 PKCE (JWE) vers le login MyKeyz |
+| **Statut** | 🟡 v0.3.0 poussée le 14/10/2026 — **déploiement par Jessy** (Plesk) sur https://mcp.mykeyz.jg.app · OAuth off en prod (`OAUTH_JWT_SECRET` manquant) · ChatGPT : actualiser le connecteur après chaque déploiement |
+| **Repo** | `/root/MyKeyzMCP` — github.com/gafsou20/MyKeyzMCP · `main` |
+| **Écosystème** | Back PHP 7.2/Phalcon `api.mykeyz.jg.app` (miroir FTP `/root/mykeyz-backend`, creds `.env.local`, **jamais modifier l'existant : ajouts via nouveaux controller + router uniquement** — `routes/mcp.php` + `McpController.php` en prod depuis le 14/10) · front de référence **`/root/CRMMyKeyzV2`** (Vue 2) — ⚠️ `/root/MyKeyzCRM` n'est PAS le bon front · base locale `mykeyz-v2` (Mongo 27020) |
+| **⚠️ Bug prod** | Recherche #1533 (créée par l'ancien MCP, sans `transaction_id`) → `Propriete::getSearchs()` renvoie 0 acheteur sur tous les biens du CRM depuis le 27/07 ; correctif Mongo transmis à Jessy |
+| **📖 Détails** | **Voir `/root/MyKeyzMCP/PROJECT.md`** + `docs/JOINTURES.md` (cartographie des jointures validée par Jessy) |
+| **Créé / MAJ** | 06/2026 · MAJ 14/10/2026 |
