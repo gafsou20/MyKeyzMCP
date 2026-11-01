@@ -83,15 +83,27 @@ export async function fetchAsDataUrl(url: string, fileName?: string): Promise<{ 
   } catch {
     throw new ToolError('URL de fichier invalide.');
   }
-  if (u.protocol !== 'https:') throw new ToolError('Seules les URL https sont acceptées.');
-  const host = u.hostname.replace(/^\[|\]$/g, '');
-  const ips = isIP(host) ? [host] : (await lookup(host, { all: true }).catch(() => [])).map((r) => r.address);
-  if (!ips.length) throw new ToolError(`Hôte introuvable : ${u.hostname}.`);
-  if (ips.some(isPrivateIp)) throw new ToolError('Adresse non autorisée (réseau privé).');
-
-  const res = await fetch(u, { redirect: 'error', signal: AbortSignal.timeout(30_000) }).catch((e: Error) => {
-    throw new ToolError(`Téléchargement impossible : ${e.message}`);
-  });
+  // Redirections suivies À LA MAIN (5 max) : chaque étape revalidée (https, hôte public) — les liens de
+  // téléchargement temporaires (ChatGPT…) redirigent souvent vers un stockage de fichiers.
+  let res: Response | undefined;
+  for (let hop = 0; hop <= 5; hop++) {
+    if (u.protocol !== 'https:') throw new ToolError('Seules les URL https sont acceptées.');
+    const host = u.hostname.replace(/^\[|\]$/g, '');
+    const ips = isIP(host) ? [host] : (await lookup(host, { all: true }).catch(() => [])).map((r) => r.address);
+    if (!ips.length) throw new ToolError(`Hôte introuvable : ${u.hostname}.`);
+    if (ips.some(isPrivateIp)) throw new ToolError('Adresse non autorisée (réseau privé).');
+    const r = await fetch(u, {
+      redirect: 'manual',
+      signal: AbortSignal.timeout(30_000),
+      headers: { 'User-Agent': 'MyKeyz-MCP/0.5 (+https://mcp.mykeyz.jg.app)' },
+    }).catch((e: Error) => {
+      throw new ToolError(`Téléchargement impossible : ${e.message}`);
+    });
+    const loc = r.status >= 300 && r.status < 400 ? r.headers.get('location') : null;
+    if (!loc) { res = r; break; }
+    u = new URL(loc, u);
+  }
+  if (!res) throw new ToolError('Téléchargement impossible : trop de redirections.');
   if (!res.ok) throw new ToolError(`Téléchargement impossible : HTTP ${res.status}.`);
   const declared = Number(res.headers.get('content-length') ?? 0);
   if (declared > MAX_FILE_BYTES) throw new ToolError(`Fichier trop volumineux (max ${MAX_FILE_BYTES / 1024 / 1024} Mo).`);

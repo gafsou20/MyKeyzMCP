@@ -52,8 +52,8 @@ export function registerGedTools(server: McpServer): void {
       title: 'Ajouter un document',
       description:
         'Ajoute un fichier à un bien ou un projet À PARTIR D’UNE URL https publique (file_url : lien d’une photo, d’un PDF…) '
-        + 'ou d’un contenu base64 déjà disponible (file). ⚠️ Une pièce jointe envoyée dans la conversation n’est PAS '
-        + 'transmissible ici : pour que l’utilisateur ajoute ses propres photos / documents, utilise ged_lien_depot. ACL 21.',
+        + 'ou d’un contenu base64 déjà disponible (file). Pour une pièce jointe de la conversation : ged_ajouter_fichier ; '
+        + 'à défaut, ged_lien_depot. ACL 21.',
       inputSchema: {
         file_url: z.string().url().optional().describe('URL https publique du fichier (le serveur le télécharge, 20 Mo max).'),
         file: z.string().optional().describe('Contenu base64 brut ou data URL (petits fichiers uniquement).'),
@@ -86,13 +86,50 @@ export function registerGedTools(server: McpServer): void {
   );
 
   server.registerTool(
+    'ged_ajouter_fichier',
+    {
+      title: 'Ajouter un fichier de la conversation',
+      description:
+        'Ajoute à un bien ou un projet un fichier (photo, PDF…) que l’utilisateur a JOINT DANS LA CONVERSATION : passe '
+        + 'la pièce jointe dans le paramètre `fichier` (ChatGPT fournit son lien de téléchargement temporaire). À utiliser en '
+        + 'priorité quand l’utilisateur envoie une photo ou un document dans le chat. Si aucun fichier n’est transmis, '
+        + 'propose ged_lien_depot. Un appel par fichier. ACL 21.',
+      inputSchema: {
+        fichier: z.object({
+          download_url: z.string().url().describe('Lien de téléchargement temporaire fourni par le client.'),
+          file_id: z.string().describe('Identifiant du fichier chez le client.'),
+          mime_type: z.string().optional().describe('Type MIME.'),
+          file_name: z.string().optional().describe('Nom du fichier.'),
+        }).describe('Pièce jointe de la conversation.'),
+        type: entity,
+        id: z.number().int(),
+        type_document: refIn('GedType').default('image'),
+      },
+      annotations: { readOnlyHint: false, openWorldHint: true },
+      // Apps SDK (ChatGPT) : ce champ est un fichier → ChatGPT y passe {download_url, file_id, mime_type?, file_name?}
+      _meta: { 'openai/fileParams': ['fichier'] },
+    },
+    handler(async (a) => {
+      const f = a.fichier;
+      if (!f?.download_url) throw new ToolError('Aucun fichier transmis : propose ged_lien_depot à l’utilisateur.');
+      const got = await fetchAsDataUrl(f.download_url, f.file_name?.trim() || undefined);
+      const res = await gedApi.upload(got.dataUrl, got.fileName, {
+        model: a.type,
+        model_id: a.id,
+        type_id: ref.resolve('GedType', a.type_document) as number,
+      });
+      return { ok: true, fichier: got.fileName, document: typeof res === 'object' && res ? present(res as Ged) : res };
+    }),
+  );
+
+  server.registerTool(
     'ged_lien_depot',
     {
       title: 'Lien pour déposer des fichiers',
       description:
         'Crée un lien web temporaire (30 min) où l’UTILISATEUR dépose lui-même photos et documents (depuis son téléphone '
-        + 'ou son ordinateur) ; ils sont ajoutés à la GED du bien ou du projet. À utiliser dès que l’utilisateur veut ajouter '
-        + 'des photos / documents qu’il possède (une pièce jointe de la conversation ne peut pas être transmise à un outil). '
+        + 'ou son ordinateur) ; ils sont ajoutés à la GED du bien ou du projet. Solution de repli quand la pièce jointe '
+        + 'ne peut pas être transmise par ged_ajouter_fichier, ou pour déposer plusieurs fichiers depuis un téléphone. '
         + 'Donne-lui le lien tel quel, puis vérifie avec list_ged quand il a terminé. ACL 21.',
       inputSchema: {
         type: entity,

@@ -1,7 +1,7 @@
 # MyKeyzMCP — PROJECT.md
 
 > Document de référence **autonome** du serveur MCP MyKeyz.
-> Dernière mise à jour : 25/10/2026 (v0.4.0 — ajout de photos / documents).
+> Dernière mise à jour : 01/11/2026 (v0.5.0 — pièces jointes ChatGPT + liens de dépôt stables).
 
 ---
 
@@ -191,10 +191,9 @@ Nouveaux fichiers, lecture seule, sans impact sur l'existant : `routes/mcp.php` 
 7. **`_id` Mongo** renvoyé sous forme `{ $oid }` → aplati par `core/normalize.ts` et retiré avant renvoi à l'API.
 8. **Agenda** : `env_id` non posé par l'API à la création (comportement back, sans impact).
 9. Le cache des référentiels dure 10 min : une valeur ajoutée dans le CRM peut mettre ce délai à apparaître.
-11. **Fichiers** : une pièce jointe de la conversation n'est jamais transmissible à un outil MCP → lien de dépôt. Le back
+11. **Fichiers** : ChatGPT peut transmettre une pièce jointe à un outil qui déclare `_meta["openai/fileParams"]` (`ged_ajouter_fichier`, v0.5.0 ; à confirmer en réel : des développeurs signalaient que les pièces jointes du chat n'arrivaient pas) ; sinon lien de dépôt. Le back
     n'accepte qu'une **data URL** (base64 brut = fichier vide enregistré sans erreur) : toujours passer par `toDataUrl()`.
-12. **Liens de dépôt sans `DEPOT_SECRET`** : clé propre à chaque processus → si Plesk / Passenger lance plusieurs processus
-    ou redémarre, un lien peut répondre « expiré ». Définir `DEPOT_SECRET` en prod.
+12. **Liens de dépôt sans `DEPOT_SECRET`** : avant v0.5.0, clé propre à chaque processus → « Lien expiré » dès l'ouverture (Plesk / Passenger lance et recycle plusieurs processus ; c'était le cas en prod, sans `DEPOT_SECRET` ni `OAUTH_JWT_SECRET`). Depuis v0.5.0 : repli sur une clé créée une fois dans `.depot-secret` (racine, 600, hors git ; `DEPOT_KEY_FILE` pour changer) → même clé pour tous les processus et après redémarrage. `DEPOT_SECRET` reste prioritaire.
 
 ## 9. Tests
 
@@ -236,6 +235,7 @@ Non validé contre la vraie API : écritures réelles (faute de compte de test).
 | 27/07/2026 | 0.1.0 | Login avec `plateform: "MCP"` |
 | 14/10/2026 | 0.2.0 | Refonte orientée métier : instructions, glossaire, résolution id/libellé, sorties `{id,label}`, filtres complets, recherches strictes, matching bidirectionnel, mises à jour par fusion, `whoami`, cartographie `docs/JOINTURES.md` |
 | 14/10/2026 | 0.3.0 | Routes back `/mcp/*` (nouveaux fichiers) + `list_searches`, `search_stats`, `find_buyers` robuste, graphies de villes, compteur d'acheteurs fiable |
+| 01/11/2026 | 0.5.0 | `ged_ajouter_fichier` : pièce jointe de la conversation via `_meta["openai/fileParams"]` (ChatGPT passe `{download_url, file_id, mime_type?, file_name?}`) ; liens de dépôt stables (clé `.depot-secret`) ; téléchargements : redirections suivies et revalidées (https, hôte public), User-Agent |
 | 25/10/2026 | 0.4.0 | Ajout de photos / documents : `ged_lien_depot` (page de dépôt temporaire), `ged_upload` par `file_url`, data URL forcée (corrige les fichiers vides du base64 brut) |
 
 ---

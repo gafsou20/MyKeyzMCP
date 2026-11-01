@@ -1,4 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { EncryptJWT, jwtDecrypt } from 'jose';
 
 /**
@@ -12,7 +14,36 @@ import { EncryptJWT, jwtDecrypt } from 'jose';
  */
 export const DEPOT_TTL = '30m';
 
-const secret = process.env.DEPOT_SECRET || process.env.OAUTH_JWT_SECRET || '';
+/**
+ * Sans DEPOT_SECRET / OAUTH_JWT_SECRET (cas de la prod au 01/11/2026), la clé était propre à chaque processus :
+ * Plesk / Passenger lance plusieurs processus et les recycle → « Lien expiré » dès l'ouverture du lien.
+ * Repli : clé aléatoire créée UNE fois et gardée dans un fichier (DEPOT_KEY_FILE, défaut `.depot-secret` à la racine,
+ * droits 600, hors git) → la même clé pour tous les processus et après redémarrage.
+ */
+function fileSecret(): string {
+  const file = resolve(process.env.DEPOT_KEY_FILE || '.depot-secret');
+  try {
+    const v = readFileSync(file, 'utf8').trim();
+    if (v.length >= 32) return v;
+  }
+  catch { /* absent : on le crée */ }
+  try {
+    const v = randomBytes(32).toString('hex');
+    writeFileSync(file, v, { mode: 0o600, flag: 'wx' });
+    return v;
+  }
+  catch {
+    // créé entre-temps par un autre processus : on le relit
+    try {
+      const v = readFileSync(file, 'utf8').trim();
+      if (v.length >= 32) return v;
+    }
+    catch { /* dossier non inscriptible */ }
+  }
+  return '';
+}
+
+const secret = process.env.DEPOT_SECRET || process.env.OAUTH_JWT_SECRET || fileSecret();
 export const DEPOT_KEY_EPHEMERAL = !secret;
 const key = secret ? createHash('sha256').update(`depot:${secret}`).digest() : randomBytes(32);
 
