@@ -16,7 +16,7 @@ Il ne possède **aucune donnée** ni base : c'est une couche de traduction au-de
 | Brique | Emplacement | Rôle |
 |---|---|---|
 | Back (API) | `https://api.mykeyz.jg.app` — miroir git `/root/api.mykeyz.jg.app` (github.com/gafsou20/api.mykeyz.jg.app, privé, `./deploy.sh`, creds `.env.local`) | PHP 7.2 + Phalcon Micro + MongoDB. **Règle (Jessy, 14/10/2026) : ne jamais modifier l'existant ; ajouts autorisés uniquement via NOUVEAUX controller + router** (`php -l` 7.2 avant upload). |
-| Front CRM | `/root/CRMMyKeyzV2` (Vue 2 + BootstrapVue) | **Source de vérité des jointures** objets ↔ Param |
+| Front CRM | `github.com/gafsou20/CRMMyKeyzV2 (plus de copie locale depuis le 01/11/2026 : `git clone` si besoin)` (Vue 2 + BootstrapVue) | **Source de vérité des jointures** objets ↔ Param |
 | Base | MongoDB `mykeyz-v2` (copie locale Mongo 27020) | Données réelles — analyse uniquement |
 | MCP | `/root/MyKeyzMCP` — github.com/gafsou20/MyKeyzMCP · `main` | Ce projet |
 
@@ -24,7 +24,7 @@ Il ne possède **aucune donnée** ni base : c'est une couche de traduction au-de
 
 ```
   CRMMyKeyzV2 (front web)          MyKeyzMCP (ce projet)
-  /root/CRMMyKeyzV2                /root/MyKeyzMCP
+  GitHub gafsou20/CRMMyKeyzV2                /root/MyKeyzMCP
   Vue 2 · utilisé par les agents   Node/TS · utilisé par l'agent IA
             │  HTTP + token               │  HTTP + token (plateform "MCP")
             └──────────────┬──────────────┘
@@ -44,7 +44,7 @@ Il ne possède **aucune donnée** ni base : c'est une couche de traduction au-de
 - **Le back est la seule source des données ; le front est la seule source des jointures** : les correspondances champ → référentiel (`contact.status_id` → `Param[ContactStatus]`) ne sont écrites que dans CRMMyKeyzV2 (`$api.p(...)`, `$api.params.X`) et la collection `model`. Le MCP les a reprises dans `docs/JOINTURES.md` et `src/domain/`.
 - **Routes du back propres au MCP** : `routes/mcp.php` + `controllers/McpController.php` (§7 bis), lecture seule, non utilisées par le front.
 - Correspondance des noms : dossier back `/root/api.mykeyz.jg.app` = API `api.mykeyz.jg.app` = connexion Phalcon `mongo` = base **`mykeyz-v2`** (la connexion `old` pointe une ancienne base `mykeyz`, inutilisée ; `pbx` = PostgreSQL téléphonie, inutilisée par les contrôleurs actuels).
-- ⚠️ `/root/MyKeyzCRM` (Ionic Vue 3) et `/root/MyKeyzCRM-api-src` (ancienne copie du back, juin 2026) **ne font pas partie de l'écosystème actif** : ne pas s'y fier.
+- ⚠️ `/root/MyKeyzCRM` (Ionic Vue 3) et `/root/MyKeyzCRM-api-src` (ancienne copie du back, juin 2026, **supprimée le 01/11/2026**) **ne font pas partie de l'écosystème actif** : ne pas s'y fier.
 
 Multi-marque : `env_id` 1 = MyKeyz, 2 = SelecSion. Le back filtre sur le `current_env` de l'utilisateur ; **le MCP ne gère pas l'env** (décision du 14/10/2026).
 
@@ -251,7 +251,7 @@ Non validé contre la vraie API : écritures réelles (faute de compte de test).
 | **Stack** | Node 20 + TS strict + `@modelcontextprotocol/sdk` 1.29 + Express + Zod · OAuth 2.1 PKCE (JWE) vers le login MyKeyz |
 | **Statut** | 🟡 v0.3.0 poussée le 14/10/2026 — **déploiement par Jessy** (Plesk) sur https://mcp.mykeyz.jg.app · OAuth off en prod (`OAUTH_JWT_SECRET` manquant) · ChatGPT : actualiser le connecteur après chaque déploiement |
 | **Repo** | `/root/MyKeyzMCP` — github.com/gafsou20/MyKeyzMCP · `main` |
-| **Écosystème** | Back PHP 7.2/Phalcon `api.mykeyz.jg.app` (miroir FTP `/root/api.mykeyz.jg.app`, creds `.env.local`, **jamais modifier l'existant : ajouts via nouveaux controller + router uniquement** — `routes/mcp.php` + `McpController.php` en prod depuis le 14/10) · front de référence **`/root/CRMMyKeyzV2`** (Vue 2) — ⚠️ `/root/MyKeyzCRM` n'est PAS le bon front · base locale `mykeyz-v2` (Mongo 27020) |
+| **Écosystème** | Back PHP 7.2/Phalcon `api.mykeyz.jg.app` (miroir FTP `/root/api.mykeyz.jg.app`, creds `.env.local`, **jamais modifier l'existant : ajouts via nouveaux controller + router uniquement** — `routes/mcp.php` + `McpController.php` en prod depuis le 14/10) · front de référence **`github.com/gafsou20/CRMMyKeyzV2 (plus de copie locale depuis le 01/11/2026 : `git clone` si besoin)`** (Vue 2) — ⚠️ `/root/MyKeyzCRM` n'est PAS le bon front · base locale `mykeyz-v2` (Mongo 27020) |
 | **⚠️ Bug prod** | Recherche #1533 (créée par l'ancien MCP, sans `transaction_id`) → `Propriete::getSearchs()` renvoie 0 acheteur sur tous les biens du CRM depuis le 27/07 ; correctif Mongo transmis à Jessy |
 | **📖 Détails** | **Voir `/root/MyKeyzMCP/PROJECT.md`** + `docs/JOINTURES.md` (cartographie des jointures validée par Jessy) |
 | **Créé / MAJ** | 06/2026 · MAJ 14/10/2026 |
