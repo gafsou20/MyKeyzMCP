@@ -236,6 +236,7 @@ Non validé contre la vraie API : écritures réelles (faute de compte de test).
 | 14/10/2026 | 0.2.0 | Refonte orientée métier : instructions, glossaire, résolution id/libellé, sorties `{id,label}`, filtres complets, recherches strictes, matching bidirectionnel, mises à jour par fusion, `whoami`, cartographie `docs/JOINTURES.md` |
 | 14/10/2026 | 0.3.0 | Routes back `/mcp/*` (nouveaux fichiers) + `list_searches`, `search_stats`, `find_buyers` robuste, graphies de villes, compteur d'acheteurs fiable |
 | 01/11/2026 | 0.5.0 | `ged_ajouter_fichier` : pièce jointe de la conversation via `_meta["openai/fileParams"]` (ChatGPT passe `{download_url, file_id, mime_type?, file_name?}`) ; liens de dépôt stables (clé `.depot-secret`) ; téléchargements : redirections suivies et revalidées (https, hôte public), User-Agent |
+| 01/11/2026 (soir) | 0.5.0 | **Déployé par Jessy** ; envoi d'une photo jointe dans ChatGPT → GED **validé en réel par Jessy**. Commit suivant `9b63fb1` (`/health` affiche `version` et `depot_cle_stable`, version annoncée lue dans package.json) **pas encore déployé** |
 | 25/10/2026 | 0.4.0 | Ajout de photos / documents : `ged_lien_depot` (page de dépôt temporaire), `ged_upload` par `file_url`, data URL forcée (corrige les fichiers vides du base64 brut) |
 
 ---
