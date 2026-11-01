@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { VERSION } from './version.js';
 import express from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createServer } from './server.js';
@@ -23,7 +24,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(oauthRouter);
 
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, name: 'mykeyz-mcp', oauth: OAUTH_ENABLED });
+  res.json({ ok: true, name: 'mykeyz-mcp', version: VERSION, oauth: OAUTH_ENABLED, depot_cle_stable: !DEPOT_KEY_EPHEMERAL });
 });
 
 /**
